@@ -7,12 +7,18 @@ signal changed
 const PATH := "user://settings.cfg"
 const GRADES := ["Filmowy", "Wojenny", "Ciepły zachód", "Chłodny poranek", "Noir", "Bez filtra"]
 const QUALITY := ["Niska", "Średnia", "Wysoka"]
+const BOT_COUNTS := [0, 4, 8, 12, 16, 24, 32]
+const DIFFICULTY := ["Łatwy", "Normalny", "Trudny"]
 
 var grade := 0
 var quality := 2
 var sens := 1.0
 var fov := 70.0
 var volume := 0.8
+# opcje gry (solo i host PvP)
+var bots := 5                # indeks w BOT_COUNTS
+var difficulty := 1
+var bot_respawn := false
 
 
 func _ready() -> void:
@@ -23,6 +29,9 @@ func _ready() -> void:
 		fov = clampf(float(cf.get_value("video", "fov", fov)), 60.0, 100.0)
 		sens = clampf(float(cf.get_value("input", "sens", sens)), 0.2, 3.0)
 		volume = clampf(float(cf.get_value("audio", "volume", volume)), 0.0, 1.0)
+		bots = clampi(int(cf.get_value("game", "bots", bots)), 0, BOT_COUNTS.size() - 1)
+		difficulty = clampi(int(cf.get_value("game", "difficulty", difficulty)), 0, DIFFICULTY.size() - 1)
+		bot_respawn = bool(cf.get_value("game", "bot_respawn", bot_respawn))
 	_apply_audio()
 
 
@@ -33,6 +42,9 @@ func save() -> void:
 	cf.set_value("video", "fov", fov)
 	cf.set_value("input", "sens", sens)
 	cf.set_value("audio", "volume", volume)
+	cf.set_value("game", "bots", bots)
+	cf.set_value("game", "difficulty", difficulty)
+	cf.set_value("game", "bot_respawn", bot_respawn)
 	cf.save(PATH)
 	_apply_audio()
 	changed.emit()

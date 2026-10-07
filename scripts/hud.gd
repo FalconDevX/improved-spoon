@@ -163,6 +163,16 @@ func _draw_weapon(font: Font, vs: Vector2) -> void:
 	draw_string(font, Vector2(x + 26, y + 16), mode + "  [B]", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.85, 0.9, 1, 0.6))
 	if g.data["feed"] == "mag":
 		draw_string(font, Vector2(x + 26, y + 34), "MAGAZYNKI  %d" % g.mags.size(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.85, 0.9, 1, 0.6))
+	# granaty: pełne / puste ikonki i klawisz
+	var gn: int = player.grenades
+	for k in player.MAX_GRENADES:
+		var c := Vector2(x + 150 + k * 13, y + 30)
+		if k < gn:
+			draw_circle(c, 4.5, Color(0.55, 0.62, 0.4))
+			draw_rect(Rect2(c + Vector2(-1.5, -8), Vector2(3, 3)), Color(0.8, 0.8, 0.7))
+		else:
+			draw_arc(c, 4.5, 0, TAU, 12, Color(1, 1, 1, 0.2), 1.0)
+	draw_string(font, Vector2(x + 150 + player.MAX_GRENADES * 13, y + 34), "[G]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.85, 0.9, 1, 0.5))
 	# naboje w magazynku jako pionowe kreski
 	var n := mini(cap, 40)
 	var bw := minf(150.0 / n, 6.0)
@@ -289,8 +299,8 @@ func _draw_pvp(font: Font, vs: Vector2) -> void:
 	for p in get_tree().get_nodes_in_group("net_player"):
 		if is_instance_valid(p) and String(p.name).begins_with("P"):
 			opp = p
-	var mine: int = opp.deaths if opp else 0
-	_center_text(font, "Ty %d : %d Przeciwnik" % [mine, player.deaths], Vector2(vs.x * 0.5, 40), 26, Color(1, 0.95, 0.8))
+	var theirs: int = opp.pvp_kills if opp else 0
+	_center_text(font, "Ty %d : %d Przeciwnik" % [player.pvp_kills, theirs],Vector2(vs.x * 0.5, 40), 26, Color(1, 0.95, 0.8))
 	var info := "Gra: %s" % code
 	if opp == null:
 		info += "  — czekam na przeciwnika..."

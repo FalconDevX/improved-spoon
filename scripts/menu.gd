@@ -6,6 +6,8 @@ signal solo
 signal pvp(online: bool, host: bool, code: String)
 signal resume
 signal to_menu
+signal restart
+signal options_changed
 
 const UiTheme = preload("res://scripts/ui_theme.gd")
 
@@ -15,6 +17,7 @@ const VERSION := "wersja 0.4"
 
 var in_game := false
 var code := ""
+var can_host := true         # pauza: solo albo host PvP może zmieniać opcje gry
 var _pages := {}
 var _desc: Label
 var _status: Label
@@ -72,6 +75,7 @@ func _ready() -> void:
 	_pages["main"] = _page_main()
 	_pages["pvp"] = _page_pvp()
 	_pages["settings"] = _page_settings()
+	_pages["game"] = _page_game()
 	_pages["controls"] = _page_controls()
 	for k: String in _pages:
 		col.add_child(_pages[k])
@@ -144,9 +148,18 @@ func _page_main() -> Control:
 	var v := _box()
 	if in_game:
 		v.add_child(_button("WZNÓW", "Wróć do walki.", func(): resume.emit()))
+		if code != "":
+			var cb := _button("KOD GRY:  %s" % code, "Kliknij, żeby skopiować kod do schowka i wysłać go drugiemu graczowi.", func(): pass)
+			cb.pressed.connect(_copy_code.bind(cb))
+			v.add_child(cb)
+		if can_host:
+			v.add_child(_button("OPCJE GRY", "Liczba botów, poziom trudności, odradzanie botów, restart mapy.", func(): show_page("game")))
+		else:
+			v.add_child(_button("OPCJE GRY", "Opcje gry (boty, restart mapy) ustawia host.", func(): pass))
 	else:
 		v.add_child(_button("GRA SOLO", "Misja z oddziałami botów na posterunkach. Na lotnisku czekają myśliwce z bombami.", func(): solo.emit()))
 		v.add_child(_button("BITWA PVP 1 NA 1", "Pojedynek z drugim graczem przez internet albo w sieci lokalnej.", func(): show_page("pvp")))
+		v.add_child(_button("OPCJE GRY", "Liczba botów, poziom trudności i odradzanie botów (solo i jako host PvP).", func(): show_page("game")))
 	v.add_child(_button("USTAWIENIA", "Filtr kolorów, jakość grafiki, czułość myszy, pole widzenia, głośność.", func(): show_page("settings")))
 	v.add_child(_button("STEROWANIE", "Klawisze piechoty i samolotu.", func(): show_page("controls")))
 	if in_game:
@@ -246,6 +259,40 @@ func _page_settings() -> Control:
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 10)
 	v.add_child(gap)
+	v.add_child(_button("‹  WSTECZ", "", func(): show_page("main")))
+	return v
+
+
+func _copy_code(b: Button) -> void:
+	DisplayServer.clipboard_set(code)
+	b.text = "SKOPIOWANO:  %s" % code
+	await get_tree().create_timer(2.0).timeout
+	if is_instance_valid(b):
+		b.text = "KOD GRY:  %s" % code
+
+
+func _page_game() -> Control:
+	var v := _box()
+	v.add_child(_heading("OPCJE GRY"))
+	var counts: Array = Settings.BOT_COUNTS.map(func(n): return str(n))
+	v.add_child(_row("Liczba botów", _option(counts, Settings.bots, func(i: int):
+		Settings.bots = i
+		Settings.save())))
+	v.add_child(_row("Poziom trudności", _option(Settings.DIFFICULTY, Settings.difficulty, func(i: int):
+		Settings.difficulty = i
+		Settings.save()
+		options_changed.emit())))
+	v.add_child(_row("Odradzanie botów", _option(["Wyłączone", "Po 30 s"], 1 if Settings.bot_respawn else 0, func(i: int):
+		Settings.bot_respawn = i == 1
+		Settings.save())))
+	var l := Label.new()
+	l.text = "Liczba botów zmienia się po restarcie mapy. Restart: wszyscy wracają na start, wyniki od zera."
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size = Vector2(440, 0)
+	l.add_theme_font_size_override("font_size", 14)
+	l.add_theme_color_override("font_color", UiTheme.DIM)
+	v.add_child(l)
+	v.add_child(_button("RESTART MAPY", "Nowa runda z obecnymi opcjami (w PvP także u przeciwnika).", func(): restart.emit()))
 	v.add_child(_button("‹  WSTECZ", "", func(): show_page("main")))
 	return v
 

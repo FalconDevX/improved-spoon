@@ -68,6 +68,14 @@ func build(level) -> void:
 			var x0 := -half + cx * CELL
 			var z0 := -half + cz * CELL
 			var xf: Array[Transform3D] = []
+			# budynki w sektorze (podłoga i dach nie mają kolizji — promień trafiałby ziemię w środku)
+			var cell := Rect2(x0, z0, CELL, CELL)
+			var rooms: Array[Rect2] = []
+			for rf: Dictionary in level.roofs:
+				var a: AABB = rf["aabb"]
+				var rr := Rect2(a.position.x, a.position.z, a.size.x, a.size.z).grow(0.4)
+				if rr.intersects(cell):
+					rooms.append(rr)
 			var gx := x0
 			while gx < x0 + CELL:
 				var gz := z0
@@ -80,6 +88,13 @@ func build(level) -> void:
 					var v := int((p.y + Level.HALF) / (Level.HALF * 2.0) * 256.0)
 					if img.get_pixel(clampi(u, 0, 255), clampi(v, 0, 255)).r > 0.25:
 						continue   # droga
+					var inside := false
+					for rr in rooms:
+						if rr.has_point(p):
+							inside = true
+							break
+					if inside:
+						continue   # wnętrze domu
 					var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, 9.0, p.y), Vector3(p.x, -0.5, p.y), 1)
 					var r := space.intersect_ray(q)
 					if r.is_empty() or r["collider"] != level.ground_body:

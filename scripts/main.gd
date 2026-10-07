@@ -94,6 +94,7 @@ func _process(_dt: float) -> void:
 
 
 func _physics_process(dt: float) -> void:
+	_tick_bots(dt)
 	if Player.net_on and _match_started and is_instance_valid(_player) and _player.down:
 		_respawn_t += dt
 		if _hud:
@@ -115,28 +116,297 @@ func _start_solo() -> void:
 	_spawn_planes()
 	_make_hud(player)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_when_nav(_spawn_squads)
+
+
+func _when_nav(f: Callable) -> void:
 	if _level.is_ready():
-		_spawn_squads()
+		f.call()
 	else:
-		_level.ready_nav.connect(_spawn_squads, CONNECT_ONE_SHOT)
+		_level.ready_nav.connect(f, CONNECT_ONE_SHOT)
 
 
-## Oddziały 1-3 żołnierzy na posterunkach (nie przy starcie gracza).
+# ======================================================== boty
+# Liczba, poziom trudności i odradzanie z opcji gry (Settings). W PvP boty liczy host: rozsyła
+# ich stan paczkami (limit pakietu GD-Sync ~1200 B), strzały i upadki; u gościa są kukiełkami.
+
+const BOT_RESPAWN := 30.0
+const BOT_PACK := 8              # botów w jednej paczce stanu
+const BOT_NET_RATE := 0.1
+const MAX_BOT_CORPSES := 14
+
+var _bot_n := 0
+var _bot_queue: Array = []       # czasy odrodzenia zabitych botów
+var _bot_corpses: Array = []
+var _bot_net_t := 0.0
+var _clock := 0.0
+
+
+## Miejsca startu graczy (boty nie startują obok nich).
+func _player_spawns() -> Array:
+	if Player.net_on:
+		return [_level.posts[9], _level.posts[11]]
+	return [_level.spawn_player]
+
+
+## Oddziały 1-3 żołnierzy na posterunkach (nie przy starcie graczy), łącznie tylu, ile w opcjach.
 func _spawn_squads() -> void:
-	var n := 0
+	if Player.net_on and not _pvp_host:
+		return
+	Npc.skill = Settings.difficulty
+	var want: int = mini(Settings.BOT_COUNTS[Settings.bots], MAX_NPC)
+	var posts: Array = []
 	for post: Vector3 in _level.posts:
-		if post.distance_to(_level.spawn_player) < 25.0:
+		var ok := true
+		for sp: Vector3 in _player_spawns():
+			if post.distance_to(sp) < 25.0:
+				ok = false
+		if ok:
+			posts.append(post)
+	posts.shuffle()
+	var made: Array = []
+	var n := 0
+	while n < want and not posts.is_empty():
+		for post: Vector3 in posts:
+			for i in _rng.randi_range(1, 3):
+				if n >= want:
+					break
+				made.append(_spawn_bot(post))
+				n += 1
+			if n >= want:
+				break
+	_send_bots(made)
+
+
+func _spawn_bot(post: Vector3) -> Node:
+	var off := Vector3(_rng.randf_range(-2.5, 2.5), 0, _rng.randf_range(-2.5, 2.5))
+	var p := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, post + off)
+	var npc := Npc.new()
+	_bot_n += 1
+	npc.name = "Bot%d" % _bot_n
+	npc.position = Vector3(p.x, 0.0, p.z)
+	npc.rotation.y = _rng.randf_range(-PI, PI)
+	add_child(npc)
+	npc.downed.connect(_on_bot_down)
+	return npc
+
+
+func _on_bot_down(npc: Node) -> void:
+	_bot_queue.append(_clock + BOT_RESPAWN)
+	_keep_corpse(npc)
+
+
+func _keep_corpse(npc: Node) -> void:
+	_bot_corpses.append(npc)
+	while _bot_corpses.size() > MAX_BOT_CORPSES:
+		var c = _bot_corpses.pop_front()
+		if is_instance_valid(c):
+			c.queue_free()
+
+
+func _tick_bots(dt: float) -> void:
+	_clock += dt
+	if not is_instance_valid(_player) or (Player.net_on and not _pvp_host):
+		return
+	# odradzanie: posterunek daleko od graczy
+	if not _bot_queue.is_empty() and _clock >= float(_bot_queue[0]):
+		_bot_queue.pop_front()
+		if Settings.bot_respawn and get_tree().get_nodes_in_group("npc").filter(func(b): return not b.down).size() < MAX_NPC:
+			var far: Array = _level.posts.filter(func(p: Vector3):
+				for s in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("net_player"):
+					if not s.down and p.distance_to(s.global_position) < 45.0:
+						return false
+				return true)
+			if not far.is_empty():
+				_send_bots([_spawn_bot(far[_rng.randi() % far.size()])])
+	if not Player.net_on or _opponent() == null:
+		return
+	_bot_net_t -= dt
+	if _bot_net_t > 0.0:
+		return
+	_bot_net_t = BOT_NET_RATE
+	var gd := get_node("/root/GDSync")
+	var f := PackedFloat32Array()
+	var k := 0
+	for b in get_tree().get_nodes_in_group("npc"):
+		if b.down or b.is_queued_for_deletion():
 			continue
-		for i in _rng.randi_range(1, 3):
-			if n >= MAX_NPC:
-				return
-			var off := Vector3(_rng.randf_range(-2.5, 2.5), 0, _rng.randf_range(-2.5, 2.5))
-			var p := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, post + off)
-			var npc := Npc.new()
-			npc.position = Vector3(p.x, 0.0, p.z)
-			npc.rotation.y = _rng.randf_range(-PI, PI)
-			add_child(npc)
-			n += 1
+		b.net_pack(f, int(String(b.name).trim_prefix("Bot")))
+		k += 1
+		if k == BOT_PACK:
+			gd.call_func_unreliable(net_bots_state, f)
+			f = PackedFloat32Array()
+			k = 0
+	if k > 0:
+		gd.call_func_unreliable(net_bots_state, f)
+
+
+func _bot_info(b: Node) -> Array:
+	return [String(b.name), b.global_position, b.visual.rotation.y, b.weapon_id, b.tint_i, b.helmet, b.vest]
+
+
+## Host: nowe boty pojawiają się też u gościa.
+func _send_bots(bots: Array, to := -1) -> void:
+	if not Player.net_on or not _pvp_host or bots.is_empty():
+		return
+	var list: Array = []
+	for b in bots:
+		if is_instance_valid(b) and not b.down:
+			list.append(_bot_info(b))
+	var gd := get_node("/root/GDSync")
+	if to >= 0:
+		gd.call_func_on(to, net_bots_spawn, list)
+	else:
+		gd.call_func(net_bots_spawn, list)
+
+
+## (host) gość prosi o listę botów.
+func net_want_bots() -> void:
+	if _pvp_host:
+		_send_bots(get_tree().get_nodes_in_group("npc"), get_node("/root/GDSync").get_sender_id())
+
+
+## (gość) host stworzył boty.
+func net_bots_spawn(list: Array) -> void:
+	for it: Array in list:
+		if has_node(String(it[0])):
+			continue
+		var npc := Npc.new()
+		npc.is_remote = true
+		npc.name = it[0]
+		npc.position = it[1]
+		npc.rotation.y = it[2]
+		npc.weapon_id = it[3]
+		npc.tint_i = it[4]
+		npc.helmet = it[5]
+		npc.vest = it[6]
+		add_child(npc)
+
+
+## (gość) paczka stanu botów.
+func net_bots_state(f: PackedFloat32Array) -> void:
+	var i := 0
+	while i + Npc.NET_STRIDE <= f.size():
+		var b := get_node_or_null("Bot%d" % int(f[i]))
+		if b and b.is_remote:
+			b.net_apply(f, i)
+		i += Npc.NET_STRIDE
+
+
+## Host: bot strzelił (wołane przez npc.gd).
+func bot_shot(b: Node, origin: Vector3, dir: Vector3, tracer: bool) -> void:
+	if _opponent() != null:
+		get_node("/root/GDSync").call_func(net_bot_shot, String(b.name), origin, dir, tracer)
+
+
+func net_bot_shot(n: String, origin: Vector3, dir: Vector3, tracer: bool) -> void:
+	var b := get_node_or_null(n)
+	if b and b.is_remote:
+		b.net_fire(origin, dir, tracer)
+
+
+## Host: bot padł — u gościa też; zabójstwo zaliczane temu, kto ostatni trafił.
+func bot_down(b: Node, dir: Vector3, at: Vector3, seg: String, energy: float, instant: bool) -> void:
+	var by := ""
+	if b.last_shooter != null and is_instance_valid(b.last_shooter):
+		by = String(b.last_shooter.name)
+	get_node("/root/GDSync").call_func(net_bot_down, String(b.name), b.global_position, dir, at, seg, energy, instant, by, b.last_hit_seg)
+
+
+func net_bot_down(n: String, pos: Vector3, dir: Vector3, at: Vector3, seg: String, energy: float, instant: bool, by: String, hit_seg: String) -> void:
+	var b := get_node_or_null(n)
+	if b == null or not b.is_remote or b.down:
+		return
+	b.global_position = pos
+	b.last_hit_seg = hit_seg
+	b._collapse(dir, at, seg, energy, instant)
+	_keep_corpse(b)
+	if is_instance_valid(_player) and by == String(_player.name):
+		_player.on_kill(b)
+
+
+## Gość: moja kula trafiła kukiełkę bota — skutki liczy host.
+func send_bot_hit(b: Node, h: Dictionary) -> void:
+	get_node("/root/GDSync").call_func(net_bot_hit, String(b.name), h)
+
+
+func net_bot_hit(n: String, h: Dictionary) -> void:
+	var b := get_node_or_null(n)
+	if b == null or b.is_remote or b.down:
+		return
+	h["shooter"] = get_node_or_null("P%d" % get_node("/root/GDSync").get_sender_id())
+	b.bullet_hit(h)
+
+
+# ======================================================== restart mapy
+
+## Restart (host albo solo): nowe boty według opcji, gracze na startowych miejscach, wyniki od zera,
+## samoloty i skrzynki jak nowe. W PvP gość robi to samo u siebie (net_restart).
+func restart_match() -> void:
+	if Player.net_on and not _pvp_host:
+		return
+	if Player.net_on:
+		get_node("/root/GDSync").call_func(net_restart)
+	_reset_world()
+	_when_nav(_spawn_squads)
+
+
+func net_restart() -> void:
+	_reset_world()
+	if is_instance_valid(_player):
+		_player._msg("Host zrestartował mapę")
+
+
+func _reset_world() -> void:
+	if _menu and _menu.in_game:
+		_close_pause()
+	for b in get_tree().get_nodes_in_group("npc"):
+		b.queue_free()
+	_bot_queue.clear()
+	_bot_corpses.clear()
+	Npc._covers_taken.clear()
+	Npc.deaths = 0
+	Npc.skill = Settings.difficulty
+	for c in _corpses:
+		if is_instance_valid(c):
+			c.queue_free()
+	_corpses.clear()
+	for g in get_tree().get_nodes_in_group("dropped_gun"):
+		g.queue_free()
+	for c in get_tree().get_nodes_in_group("ammo_crate"):
+		c.cooldown = 0.01
+	var others: Array = []
+	for p in get_tree().get_nodes_in_group("net_player"):
+		if String(p.name).begins_with("P"):
+			others.append(p.net_id)
+		_drop_node(p)
+	if is_instance_valid(_player):
+		_drop_node(_player)
+	_spawn_planes()
+	_respawn_t = 0.0
+	if _hud:
+		_hud.respawn_in = -1.0
+	var p: Node
+	if Player.net_on:
+		var me: int = get_node("/root/GDSync").get_client_id()
+		p = _make_net_player(me, false, _level.posts[11] if _pvp_host else _level.posts[9])
+		for id: int in others:
+			_make_net_player(id, true, _level.posts[9] if _pvp_host else _level.posts[11])
+	else:
+		p = Player.new()
+		p.name = "Player"
+		p.position = _level.spawn_player
+		p.rotation.y = -PI * 0.5
+		add_child(p)
+	_player = p
+	_hud.player = p
+
+
+func _drop_node(n: Node) -> void:
+	if n.get("vehicle") != null and is_instance_valid(n.vehicle):
+		n.vehicle.pilot_gone(n)
+	remove_child(n)
+	n.queue_free()
 
 
 ## Skrzynki z amunicją (na siatce nawigacyjnej, żeby nie stały w ścianie; te same miejsca u obu graczy).
@@ -193,7 +463,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			_player._msg("Filtr kolorów: " + Settings.GRADES[Settings.grade])
 		get_viewport().set_input_as_handled()
 		return
-	if e.is_action_pressed("ui_cancel") and _menu == null and is_instance_valid(_player):
+	if e.is_action_pressed("ui_cancel") and (_menu == null or not is_instance_valid(_menu)) and is_instance_valid(_player):
 		_open_pause()
 		get_viewport().set_input_as_handled()
 		return
@@ -398,8 +668,12 @@ func _open_pause() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_menu = Menu.new()
 	_menu.in_game = true
+	_menu.code = _pvp_code if Player.net_on else ""
+	_menu.can_host = not Player.net_on or _pvp_host
 	_menu.resume.connect(_close_pause)
 	_menu.to_menu.connect(_back_to_menu)
+	_menu.restart.connect(restart_match)
+	_menu.options_changed.connect(func(): Npc.skill = Settings.difficulty)
 	add_child(_menu)
 	if _hud:
 		_hud.get_parent().visible = false   # HUD i minimapa schowane pod menu pauzy
@@ -481,7 +755,8 @@ func _start_pvp(online: bool, host: bool, code: String) -> void:
 		gd.client_joined.connect(_on_client_joined)
 		gd.client_left.connect(_on_client_left)
 		gd.disconnected.connect(func(): _set_status("Rozłączono z GD-Sync."))
-	gd.expose_func(net_respawn)
+	for f in [net_respawn, net_want_bots, net_bots_spawn, net_bots_state, net_bot_shot, net_bot_down, net_bot_hit, net_restart]:
+		gd.expose_func(f)
 	_set_status("Łączenie (%s)..." % ("online" if online else "lokalnie"))
 	if online:
 		gd.start_multiplayer()
@@ -529,6 +804,7 @@ func _on_lobby_joined(_n: String) -> void:
 	_match_started = true
 	var gd := get_node("/root/GDSync")
 	Player.net_on = true
+	Npc.net_host = _pvp_host
 	_close_menu()
 	_spawn_planes()
 	var me: int = gd.get_client_id()
@@ -544,6 +820,10 @@ func _on_lobby_joined(_n: String) -> void:
 		if int(id) != me:
 			_on_client_joined(int(id))
 	_set_status("W grze %s" % _pvp_code)
+	_when_nav(_spawn_squads)
+	if not _pvp_host:
+		# host mógł wysłać boty, zanim tu doszliśmy — prosimy o listę jeszcze raz
+		get_tree().create_timer(1.5).timeout.connect(func(): gd.call_func(net_want_bots))
 
 
 ## Miejsce odrodzenia: posterunek we wsi daleko od przeciwnika (albo podany).
@@ -594,6 +874,8 @@ func _respawn_local() -> void:
 	var p := _make_net_player(me, false, pos, old.deaths)
 	p.kills = old.kills
 	p.score = old.score
+	p.pvp_kills = old.pvp_kills
+	p.grenades = maxi(old.grenades, 2)
 	_player = p
 	_hud.player = p
 	gd.call_func(net_respawn, me, pos, old.deaths)
@@ -602,9 +884,11 @@ func _respawn_local() -> void:
 ## (zdalnie) przeciwnik się odrodził.
 func net_respawn(id: int, pos: Vector3, deaths: int) -> void:
 	var old := get_node_or_null("P%d" % id)
+	var pk: int = old.pvp_kills if old else 0
 	if old:
 		_retire(old)
-	_make_net_player(id, true, pos, deaths)
+	var np := _make_net_player(id, true, pos, deaths)
+	np.pvp_kills = pk
 
 
 func _retire(n: Node) -> void:
@@ -623,6 +907,8 @@ func _on_client_joined(id: int) -> void:
 	# pozycję poprawi pierwszy pakiet stanu
 	_make_net_player(id, true, _level.posts[9] if _pvp_host else _level.posts[11])
 	_set_status("Przeciwnik dołączył")
+	if _pvp_host:
+		_send_bots(get_tree().get_nodes_in_group("npc"), id)
 
 
 func _on_client_left(id: int) -> void:

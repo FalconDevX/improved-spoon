@@ -666,7 +666,8 @@ const NET_RATE := 1.0 / 30.0
 static var net_on := false
 var net_id := 0
 var is_remote := false
-var deaths := 0               # ile razy zginąłem = punkty przeciwnika
+var deaths := 0               # ile razy zginąłem
+var pvp_kills := 0            # ile razy zabiłem przeciwnika (wynik PvP; boty się nie liczą)
 var _net_t := 0.0
 var _net_pos := Vector3.ZERO
 var _net_vel := Vector3.ZERO
@@ -706,7 +707,12 @@ func _collapse(dir: Vector3, at: Vector3, seg: String, energy: float, instant: b
 		v.pilot_gone(self)
 	if net_on and not is_remote:
 		deaths += 1
-		_gd().call_func(net_down, dir, at, seg, energy, instant, deaths)
+		var by := ""
+		if last_shooter != null and is_instance_valid(last_shooter):
+			by = String(last_shooter.name)
+			if last_shooter.is_in_group("net_player"):
+				last_shooter.pvp_kills += 1   # punkt dla przeciwnika (u niego liczy go net_down)
+		_gd().call_func(net_down, dir, at, seg, energy, instant, deaths, by)
 	super._collapse(dir, at, seg, energy, instant)
 
 
@@ -717,9 +723,13 @@ func _net_forward_hit(h: Dictionary) -> void:
 	var sh = h.get("shooter")
 	if sh == null or not is_instance_valid(sh) or sh.get("is_remote") != false:
 		return
+	var bot: bool = sh.is_in_group("npc")
+	if bot and not sh.net_host:
+		return
 	var d := h.duplicate()
 	d.erase("shooter")
 	d["_net"] = true
+	d["_by"] = String(sh.name)   # kto strzelał (mój żołnierz albo bot liczony u mnie)
 	_gd().call_func(net_hit, d)
 	var dir: Vector3 = h["dir"]
 	if h.get("armor", "") == "":
@@ -728,6 +738,8 @@ func _net_forward_hit(h: Dictionary) -> void:
 			FX.I.blood_spray(h["exit"], dir, 0.8)
 		FX.I.play("hit", h["entry"], -4.0, 0.15)
 	rig.hit_react(visual.global_basis.inverse() * dir, h["seg"], 0.8)
+	if bot:
+		return
 	last_hit_time = Time.get_ticks_msec() / 1000.0
 	if h.get("armor", "") == "":
 		last_hit_seg = h["seg"]
@@ -771,7 +783,7 @@ func net_shot(origin: Vector3, dir: Vector3, tracer: bool) -> void:
 
 
 ## (kukiełka) przeciwnik padł: ragdoll, punkt dla mnie.
-func net_down(dir: Vector3, at: Vector3, seg: String, energy: float, instant: bool, d: int) -> void:
+func net_down(dir: Vector3, at: Vector3, seg: String, energy: float, instant: bool, d: int, by := "") -> void:
 	if not is_remote:
 		return
 	deaths = d
@@ -779,16 +791,22 @@ func net_down(dir: Vector3, at: Vector3, seg: String, energy: float, instant: bo
 		return
 	global_position = _net_pos
 	_collapse(dir, at, seg, energy, instant)
+	# punkt tylko gdy zabiłem ja (nie bot, nie wykrwawienie bez strzelca)
 	for p in get_tree().get_nodes_in_group("player"):
-		if not p.down and not String(p.name).begins_with("Dead"):
-			p.on_kill(self)
+		if not String(p.name).begins_with("Dead") and by == String(p.name):
+			p.pvp_kills += 1
+			if not p.down:
+				p.on_kill(self)
 
 
 ## (mój żołnierz) kula przeciwnika trafiła mnie u niego — liczę skutki.
 func net_hit(h: Dictionary) -> void:
 	if is_remote or down:
 		return
-	h["shooter"] = get_parent().get_node_or_null("P%d" % _gd().get_sender_id())
+	var by := String(h.get("_by", ""))
+	h["shooter"] = get_parent().get_node_or_null(by) if by != "" else null
+	if h["shooter"] == null:
+		h["shooter"] = get_parent().get_node_or_null("P%d" % _gd().get_sender_id())
 	bullet_hit(h)
 
 
