@@ -23,6 +23,9 @@ var road_img: Image              # maska dróg 256 × 256 na całą mapę (trawa
 var ground_body: StaticBody3D
 var plane_spots: Array = []       # stanowiska samolotów (Transform3D, oś kadłuba nad ziemią)
 # lądowiska śmigłowców na placu na północny zachód od lotniska (śmigłowce przodem na wschód)
+# obrona przeciwlotnicza: [rodzaj, pozycja, obrót] — działka ZU-23-2 i wyrzutnie rakiet
+var aa_spots: Array = [["gun", Vector3(8, 0, -42), 0.6], ["gun", Vector3(50, 0, 54), 2.5],
+	["sam", Vector3(110, 0, -30), -1.2], ["sam", Vector3(-4, 0, 48), 3.0]]
 var no_grass: Array = []          # prostokąty (XZ) bez trawy: lądowiska
 var heli_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(26, 1.2, -30)),
 	Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(26, 1.2, -48))]

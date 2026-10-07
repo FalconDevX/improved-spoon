@@ -839,7 +839,7 @@ func _net_follow(dt: float) -> void:
 # ---------------------------------------------------------------- samoloty
 
 func _board_plane() -> bool:
-	for pl in get_tree().get_nodes_in_group("plane"):
+	for pl in get_tree().get_nodes_in_group("plane") + get_tree().get_nodes_in_group("emplacement"):
 		if pl.can_board(self):
 			pl.board(self)
 			return true

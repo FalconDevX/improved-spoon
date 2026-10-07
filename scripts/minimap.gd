@@ -81,7 +81,7 @@ func _draw_map() -> void:
 		v.draw_rect(Rect2(o + Vector2(a.position.x, a.position.z), Vector2(a.size.x, a.size.z)), Color(0.55, 0.58, 0.6, 0.85))
 	var now := Time.get_ticks_msec() / 1000.0
 	# wrogowie, którzy właśnie strzelali — tylko gdy strzał słychać (blisko, nie z kabiny maszyny)
-	var in_air: bool = p.get("vehicle") != null and is_instance_valid(p.vehicle)
+	var in_air: bool = p.get("vehicle") != null and is_instance_valid(p.vehicle) and p.vehicle.get("is_emplacement") != true
 	for n in get_tree().get_nodes_in_group("npc") + get_tree().get_nodes_in_group("net_player"):
 		if in_air or not is_instance_valid(n) or n.down or not n.has_meta("shot_t"):
 			continue

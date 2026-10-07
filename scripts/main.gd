@@ -12,6 +12,7 @@ const Hud = preload("res://scripts/hud.gd")
 const Level = preload("res://scripts/level.gd")
 const Aircraft = preload("res://scripts/plane.gd")
 const Heli = preload("res://scripts/heli.gd")
+const AA = preload("res://scripts/aa.gd")
 const AmmoCrate = preload("res://scripts/ammo_crate.gd")
 const Clouds = preload("res://scripts/clouds.gd")
 const Grass = preload("res://scripts/grass.gd")
@@ -453,6 +454,17 @@ func _spawn_planes() -> void:
 		pl.paint = PLANE_PAINT[i % PLANE_PAINT.size()]
 		pl.transform = _level.plane_spots[i]
 		add_child(pl)
+	for old in get_tree().get_nodes_in_group("emplacement"):
+		remove_child(old)
+		old.queue_free()
+	for i in _level.aa_spots.size():
+		var s: Array = _level.aa_spots[i]
+		var aa := AA.new()
+		aa.kind = s[0]
+		aa.name = "AA%d" % (i + 1)
+		aa.position = s[1]
+		aa.rotation.y = s[2]
+		add_child(aa)
 	for i in _level.heli_spots.size():
 		var h := Heli.new()
 		h.name = "Heli%d" % (i + 1)

@@ -42,6 +42,8 @@ func _draw() -> void:
 	if pl != null and is_instance_valid(pl):
 		if pl.get("is_heli") == true:
 			_draw_heli(font, vs, pl)
+		elif pl.get("is_emplacement") == true:
+			_draw_aa(font, vs, pl)
 		else:
 			_draw_plane(font, vs, pl)
 	else:
@@ -327,7 +329,7 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 		_center_text(font, "[R] przytrzymaj — napraw %s (%d%%)" % [what, int(k * 100.0)], at, 17, Color(0.8, 0.95, 1.0))
 		draw_rect(Rect2(at.x - 80, at.y + 8, 160, 5), Color(1, 1, 1, 0.2))
 		draw_rect(Rect2(at.x - 80, at.y + 8, 160 * k, 5), Color(0.5, 0.9, 1.0) if player.repair_t > 0.0 else Color(0.8, 0.8, 0.8, 0.7))
-	for pl in get_tree().get_nodes_in_group("plane"):
+	for pl in get_tree().get_nodes_in_group("plane") + get_tree().get_nodes_in_group("emplacement"):
 		if pl.can_board(player):
 			_center_text(font, "[F] — wsiądź do %s" % String(pl.get("board_name") if pl.get("board_name") != null else "samolotu"),Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
 			return
@@ -488,6 +490,68 @@ func _draw_heli(font: Font, vs: Vector2, pl) -> void:
 	if pl.on_ground and pl.rpm < 0.9:
 		_center_text(font, "Rozkręcanie wirnika... potem Spacja — start", Vector2(c.x, c.y + 150), 16, Color(0.85, 1.0, 0.8, 0.85))
 	_draw_countermeasures(font, vs, pl, Vector2(x, y - 52))
+
+
+## Stanowisko przeciwlotnicze: celownik, cele z wyprzedzeniem (działko), namierzanie (wyrzutnia), amunicja.
+func _draw_aa(font: Font, vs: Vector2, pl) -> void:
+	var cam := get_viewport().get_camera_3d()
+	var c := vs * 0.5
+	var green := Color(0.55, 1.0, 0.55, 0.9)
+	if pl.kind == "gun":
+		# celownik pierścieniowy przeciwlotniczy
+		for r: float in [30.0, 70.0]:
+			draw_arc(c, r, 0.0, TAU, 48, Color(green, 0.6), 1.2, true)
+		draw_line(c - Vector2(80, 0), c + Vector2(80, 0), Color(green, 0.5), 1.0)
+		draw_line(c - Vector2(0, 80), c + Vector2(0, 80), Color(green, 0.5), 1.0)
+		draw_circle(c, 2.0, green)
+		if cam:
+			_draw_air_targets(font, cam, pl)
+	else:
+		draw_arc(c, 46.0, 0.0, TAU, 40, Color(1, 1, 1, 0.3), 1.0, true)
+		_draw_lock_box(font, vs, pl)
+	if player.hit_marker > 0.0:
+		var hc := Color(1, 0.25, 0.2, player.hit_marker) if player.hit_kill else Color(1, 1, 1, player.hit_marker)
+		for d: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+			draw_line(c + d * 8.0, c + d * 16.0, hc, 2.0, true)
+	var x := vs.x - 300
+	var y := vs.y - 110
+	draw_rect(Rect2(x - 12, y - 30, 300, 120), Color(0, 0, 0, 0.35))
+	var name := "ZU-23-2  (2 × 23 mm)" if pl.kind == "gun" else "WYRZUTNIA PRZECIWLOTNICZA"
+	draw_string(font, Vector2(x, y), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 0.92, 0.7))
+	if pl.reload_t >= 0.0:
+		var tot: float = pl.BELT_RELOAD if pl.kind == "gun" else pl.SAM_RELOAD
+		_bar(Vector2(x, y + 20), 160, pl.reload_t / tot, Color(1, 0.75, 0.3), "przeładowanie %d s" % ceili(tot - pl.reload_t), font)
+	else:
+		draw_string(font, Vector2(x, y + 44), "%d" % pl.ammo, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color(1, 1, 1))
+		draw_string(font, Vector2(x + 70, y + 44), "naboi w taśmie" if pl.kind == "gun" else "rakiet", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
+	draw_string(font, Vector2(x, y + 76), "LPM — ogień   PPM — przybliżenie   F — zejdź" if pl.kind == "gun" else "LPM — rakieta (po namierzeniu)   F — zejdź", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
+
+
+## Ramka namierzania na celu (wyrzutnia gracza i stanowisko): src ma lock_cand, lock_t, LOCK_TIME, locked().
+func _draw_lock_box(font: Font, vs: Vector2, src) -> void:
+	var c := vs * 0.5
+	var t = src.lock_cand
+	var cam := get_viewport().get_camera_3d()
+	if t == null or not is_instance_valid(t) or cam == null or cam.is_position_behind(t.global_position):
+		_center_text(font, "SZUKANIE CELU", Vector2(c.x, c.y + 70), 14, Color(1, 1, 1, 0.6))
+		return
+	var p: Vector2 = cam.unproject_position(t.global_position)
+	var k: float = clampf(src.lock_t / src.LOCK_TIME, 0.0, 1.0)
+	var locked: bool = src.locked()
+	var col := Color(1, 0.25, 0.2) if locked else Color(1, 0.85, 0.3)
+	var s := lerpf(40.0, 20.0, k)
+	for d: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+		var corner := p + d * s
+		draw_line(corner, corner - Vector2(d.x * 10.0, 0), col, 2.0)
+		draw_line(corner, corner - Vector2(0, d.y * 10.0), col, 2.0)
+	if locked:
+		draw_rect(Rect2(p - Vector2(s, s), Vector2(s, s) * 2.0), Color(col, 0.15))
+		_center_text(font, "NAMIERZONO — LPM", Vector2(c.x, c.y + 70), 18, col)
+	else:
+		draw_arc(p, s + 8.0, -PI * 0.5, -PI * 0.5 + TAU * k, 32, col, 2.0, true)
+		_center_text(font, "NAMIERZANIE...", Vector2(c.x, c.y + 70), 16, col)
+	var d3: float = t.global_position.distance_to(cam.global_position)
+	draw_string(font, p + Vector2(s + 6, -s), "%d m" % int(d3), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
 
 
 ## Flary (salwy, przeładowanie) i ostrzeżenia: namierzanie, nadlatująca rakieta (samolot, śmigłowiec).
