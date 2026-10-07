@@ -117,6 +117,9 @@ func _physics_process(dt: float) -> void:
 	_tick_vitals(dt)
 	if vehicle != null:
 		return   # leci: sterowanie daje bot_pilot.gd w maszynie
+	if para > 0:
+		_tick_para(dt)
+		return
 	if down:
 		if not vitals.dead:
 			_groan_t -= dt
@@ -613,6 +616,54 @@ func is_pilot() -> bool:
 	return vehicle != null
 
 
+# ---------------------------------------------------------------- spadochron (bot-pilot)
+
+const Parachute = preload("res://scripts/parachute.gd")
+var para := 0
+var para_t := 0.0
+var _canopy: Node3D
+
+
+func start_freefall(pos: Vector3, vel: Vector3) -> void:
+	global_position = pos
+	velocity = vel
+	para = 1
+	para_t = 0.0
+
+
+func _show_canopy(on: bool) -> void:
+	if on and _canopy == null:
+		_canopy = Parachute.canopy()
+		add_child(_canopy)
+		_canopy.scale = Vector3.ONE * 0.1
+	elif not on and _canopy != null:
+		_canopy.queue_free()
+		_canopy = null
+
+
+## Bot otwiera spadochron po chwili, pod czaszą opada prosto, po wylądowaniu walczy dalej.
+func _tick_para(dt: float) -> void:
+	para_t += dt
+	if para == 1 and para_t > 1.2:
+		para = 2
+		para_t = 0.0
+		_show_canopy(true)
+	elif para == 2:
+		_canopy.scale = Vector3.ONE * clampf(para_t / Parachute.OPEN_TIME, 0.1, 1.0)
+		if para_t >= Parachute.OPEN_TIME:
+			para = 3
+	var r: String = Parachute.step(self, para, para_t, Vector3.ZERO, dt)
+	rig.air = true
+	if r == "dead":
+		vitals._die()
+		_collapse(Vector3.DOWN, chest_pos(), "torso", 5000.0, true)
+	if r != "":
+		para = 0
+		_show_canopy(false)
+		state = "search"
+		_post = global_position
+
+
 ## Cel: najbliższy żywy gracz (solo: gracz; PvP u hosta: także kukiełka gościa). Obecny cel
 ## zostaje, chyba że inny jest wyraźnie bliżej.
 func _pick_target() -> void:
@@ -680,13 +731,13 @@ func _puppet_hit(h: Dictionary) -> void:
 	sh.on_hit_confirmed(self, hit_info(h))
 
 
-const NET_STRIDE := 14
+const NET_STRIDE := 15
 
 ## Host: stan do paczki (NET_STRIDE liczb na bota — kolejność jak w net_apply).
 func net_pack(f: PackedFloat32Array, idx: int) -> void:
 	var a: Vector3 = rig.aim_dir
 	f.append_array([float(idx), global_position.x, global_position.y, global_position.z, velocity.x, velocity.z,
-		visual.rotation.y, a.x, a.y, a.z, rig.aim_w, rig.crouch, rig.kneel, rig.reload_p])
+		visual.rotation.y, a.x, a.y, a.z, rig.aim_w, rig.crouch, rig.kneel, rig.reload_p, float(para)])
 
 
 ## (kukiełka) stan z paczki hosta: pozycja, prędkość, obrót, celowanie, postawa, przeładowanie.
@@ -703,6 +754,9 @@ func net_apply(f: PackedFloat32Array, i: int) -> void:
 	if gun:
 		rig.reload_kind = "mag" if gun.data["feed"] == "mag" else "shell"
 	rig.reload_p = f[i + 13]
+	_show_canopy(f[i + 14] >= 2.0)
+	if _canopy:
+		_canopy.scale = _canopy.scale.move_toward(Vector3.ONE, 0.12)
 
 
 func _puppet_follow(dt: float) -> void:

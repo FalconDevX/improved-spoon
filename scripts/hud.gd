@@ -55,6 +55,7 @@ func _draw() -> void:
 		_draw_plane_hint(font, vs)
 	_draw_damage_dirs(vs)
 	_draw_waypoint(font, vs)
+	_draw_para(font, vs)
 	_draw_kills(font, vs)
 	_draw_vitals(font, vs)
 	if player.message_t > 0.0:
@@ -418,6 +419,26 @@ func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 	if pl.on_ground and pl.throttle < 0.05 and pl.velocity.length() < 1.0:
 		_center_text(font, "W — gaz do startu, spójrz lekko w górę przy ~110 km/h", Vector2(c.x, c.y + 150), 16, Color(0.85, 1.0, 0.8, 0.85))
 	_draw_countermeasures(font, vs, pl, Vector2(x, y - 52))
+
+
+## Spadanie po katapulcie: wysokość nad ziemią, przypomnienie o spadochronie.
+func _draw_para(font: Font, vs: Vector2) -> void:
+	var st: int = player.get("para") if player.get("para") != null else 0
+	if st == 0 or player.down:
+		return
+	var p: Vector3 = player.global_position
+	var q := PhysicsRayQueryParameters3D.create(p, p - Vector3(0, 3000, 0), 1)
+	var r: Dictionary = player.get_world_3d().direct_space_state.intersect_ray(q)
+	var alt: float = p.y - (r["position"] as Vector3).y if not r.is_empty() else p.y
+	var c := vs * 0.5
+	var blink := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.015)
+	if st == 1:
+		_center_text(font, "SPACJA — OTWÓRZ SPADOCHRON", Vector2(c.x, c.y - 150), 30, Color(1, 0.85, 0.3, blink if alt < 150.0 else 1.0))
+	elif st == 2:
+		_center_text(font, "Otwieranie spadochronu...", Vector2(c.x, c.y - 150), 22, Color(0.9, 1, 0.8))
+	else:
+		_center_text(font, "Spadochron — WASD: kierunek", Vector2(c.x, c.y - 150), 18, Color(0.9, 1, 0.8, 0.8))
+	_center_text(font, "%d m  ·  %.0f m/s" % [int(alt), -player.velocity.y], Vector2(c.x, c.y - 116), 18, Color(1, 1, 1, 0.9))
 
 
 ## Punkt nawigacyjny z mapy [M]: romb nad miejscem (albo strzałka przy krawędzi ekranu) i odległość.

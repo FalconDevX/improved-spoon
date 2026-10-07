@@ -132,6 +132,9 @@ func camera() -> Camera3D:
 func _unhandled_input(e: InputEvent) -> void:
 	if is_remote:
 		return
+	if para == 1 and not down and e.is_action_pressed("jump"):
+		_deploy()
+		return
 	if vehicle and not down and e is InputEventMouseMotion:
 		vehicle.pilot_input(e)
 		return
@@ -281,6 +284,9 @@ func _physics_process(dt: float) -> void:
 			damage_dirs.remove_at(i)
 	if vehicle:
 		return   # w kabinie: ruch i strzelanie prowadzi samolot
+	if para > 0:
+		_tick_para(dt)
+		return
 	_tick_weapon(dt)
 	_switch_t = maxf(_switch_t - dt, 0.0)
 	if bandaging >= 0.0:
@@ -686,7 +692,7 @@ func _net_send(dt: float) -> void:
 		return
 	_net_t = NET_RATE
 	_gd().call_func_unreliable(net_state, global_position, velocity, visual.rotation.y, rig.aim_dir, rig.aim_w,
-		rig.crouch, rig.sprint, rig.air, gun_i, rig.reload_p, rig.reload_kind, lean)
+		rig.crouch, rig.sprint, rig.air, gun_i, rig.reload_p, rig.reload_kind, lean, para)
 
 
 func _eject_from(g: Node3D) -> Node3D:
@@ -759,9 +765,12 @@ func _net_forward_hit(h: Dictionary) -> void:
 
 ## (kukiełka) stan przeciwnika ~30 razy na sekundę.
 func net_state(p: Vector3, v: Vector3, vyaw: float, aim: Vector3, aim_w: float, crouch: float, sprint: bool,
-		air: bool, gi: int, reload_p: float, reload_kind: String, lean_v := 0.0) -> void:
+		air: bool, gi: int, reload_p: float, reload_kind: String, lean_v := 0.0, para_v := 0) -> void:
 	if not is_remote or down:
 		return
+	_show_canopy(para_v >= 2)
+	if _canopy:
+		_canopy.scale = _canopy.scale.move_toward(Vector3.ONE, 0.04)
 	_net_lean = lean_v
 	_net_pos = p
 	_net_vel = v
@@ -887,6 +896,68 @@ func leave_vehicle(place: bool) -> void:
 		_pitch = -0.05
 		_cam_yaw.global_position = global_position + Vector3(0, 1.6, 0)
 		_cam.current = true
+
+
+# ---------------------------------------------------------------- katapulta i spadochron
+
+const Parachute = preload("res://scripts/parachute.gd")
+var para := 0                  # 0 brak, 1 swobodny spadek, 2 otwieranie, 3 otwarty
+var para_t := 0.0
+var _canopy: Node3D
+
+
+## Wyrzucony z maszyny: swobodny spadek, [Spacja] otwiera spadochron.
+func start_freefall(pos: Vector3, vel: Vector3) -> void:
+	global_position = pos
+	velocity = vel
+	para = 1
+	para_t = 0.0
+	if not is_remote:
+		_cam.current = true
+		_msg("KATAPULTA! Spacja — otwórz spadochron")
+
+
+func _deploy() -> void:
+	if para != 1:
+		return
+	para = 2
+	para_t = 0.0
+	_show_canopy(true)
+	FX.I.play("click", global_position + Vector3(0, 2, 0), 0.0, 0.1, 0.4, 30.0)
+
+
+func _show_canopy(on: bool) -> void:
+	if on and _canopy == null:
+		_canopy = Parachute.canopy()
+		add_child(_canopy)
+		_canopy.scale = Vector3.ONE * 0.1
+	elif not on and _canopy != null:
+		_canopy.queue_free()
+		_canopy = null
+
+
+func _tick_para(dt: float) -> void:
+	para_t += dt
+	if para == 2:
+		if _canopy:
+			_canopy.scale = Vector3.ONE * clampf(para_t / Parachute.OPEN_TIME, 0.1, 1.0)
+		if para_t >= Parachute.OPEN_TIME:
+			para = 3
+	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var wish := Basis(Vector3.UP, _yaw) * Vector3(input.x, 0.0, input.y)
+	var r: String = Parachute.step(self, para, para_t, wish, dt)
+	visual.rotation.y = lerp_angle(visual.rotation.y, _yaw, 1.0 - exp(-4.0 * dt))
+	rig.air = true
+	rig.crouch = 0.0
+	rig.vel = Vector3.ZERO
+	if r == "dead":
+		vitals.cause = "upadek z wysokości"
+		vitals._die()
+		_note("upadek z wysokości", [])
+		_collapse(Vector3.DOWN, chest_pos(), "torso", 5000.0, true)
+	if r != "":
+		para = 0
+		_show_canopy(false)
 
 
 ## Zginąłem w rozbitym samolocie.

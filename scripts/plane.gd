@@ -14,6 +14,7 @@ const FX = preload("res://scripts/fx.gd")
 const Ballistics = preload("res://scripts/ballistics.gd")
 const Bomb = preload("res://scripts/bomb.gd")
 const BotPilot = preload("res://scripts/bot_pilot.gd")
+const Debris = preload("res://scripts/debris.gd")
 
 const LAYER := 32
 const GRAVITY := 9.81
@@ -155,7 +156,7 @@ func _ready() -> void:
 	home = global_transform
 	if Player.net_on:
 		var gd := _gd()
-		for f in [net_plane, net_board, net_exit, net_damage, net_explode, net_bomb, net_flares, net_locked, net_board_bot]:
+		for f in [net_plane, net_board, net_exit, net_damage, net_explode, net_bomb, net_flares, net_locked, net_board_bot, net_eject]:
 			gd.expose_func(f)
 	_reset()
 
@@ -487,8 +488,10 @@ func _set_pilot(p) -> void:
 ## Pilot chce wysiąść (tylko na ziemi, prawie w miejscu).
 func request_exit() -> void:
 	if not on_ground or velocity.length() > 4.0:
-		if _local_pilot():
-			pilot._msg("Najpierw wyląduj i zwolnij")
+		if not on_ground and global_position.y - GEAR_H > 15.0:
+			eject()
+		elif _local_pilot():
+			pilot._msg("Za nisko na katapultę — wyląduj i zwolnij")
 		return
 	var p = pilot
 	_unseat(true)
@@ -1013,6 +1016,9 @@ func _apply_damage(d: float) -> void:
 		return
 	var was := hp
 	hp = minf(hp - d, MAX_HP)   # ujemne d = naprawa (gracz z kluczem, [R])
+	if not on_ground and d > 0.0 and (hp <= -MAX_HP * 0.35 or d >= MAX_HP * 0.7):
+		_break_apart()
+		return
 	if hp <= 0.0 and was > 0.0:
 		if _local_pilot():
 			pilot._msg("SAMOLOT W OGNIU!")
@@ -1069,6 +1075,8 @@ func _explode(pos: Vector3) -> void:
 
 func _reset() -> void:
 	destroyed = false
+	visible = true
+	collision_layer = LAYER
 	global_transform = home
 	velocity = Vector3.ZERO
 	_w = Vector3.ZERO
@@ -1217,3 +1225,54 @@ func net_bomb(pos: Vector3, v: Vector3) -> void:
 	bombs = maxi(bombs - 1, 0)
 	_show_racks()
 	_drop(pos, v)
+
+
+# ---------------------------------------------------------------- katapulta, rozpad w powietrzu
+
+## Pilot opuszcza maszynę w locie (F albo bot przy pożarze): leci dalej sam, z prędkością maszyny.
+func eject() -> void:
+	var p = pilot
+	if p == null or not is_instance_valid(p):
+		return
+	_unseat(false)
+	if Player.net_on and (_local_pilot() or (p.is_in_group("npc") and not p.is_remote)):
+		_gd().call_func(net_eject)
+	p.start_freefall(global_position + global_basis.y * 2.5 + Vector3.UP, velocity + global_basis.y * 9.0)
+
+
+func net_eject() -> void:
+	var p = pilot
+	_unseat(false)
+	if p != null and is_instance_valid(p) and p.has_method("start_freefall") and p.is_in_group("npc"):
+		p.para = 2      # kukiełka bota: czasza (ruch przychodzi z paczek hosta)
+
+
+## Bardzo duże obrażenia w locie: maszyna rozpada się na płonące części, pilot ginie.
+func _break_apart() -> void:
+	var pos := global_position
+	var vel := velocity
+	FX.I.explosion(pos, 2.2)
+	var parts: Array = _parts.duplicate()
+	parts.shuffle()
+	var n := 0
+	for mi: MeshInstance3D in parts:
+		if n >= 7 or mi.mesh == null:
+			continue
+		var aabb := mi.get_aabb()
+		if aabb.size.length() < 0.8:
+			continue
+		n += 1
+		var d := Debris.new()
+		var copy := MeshInstance3D.new()
+		copy.mesh = mi.mesh
+		copy.material_override = _burnt
+		copy.scale = mi.global_basis.get_scale()
+		d.add_child(copy)
+		get_parent().add_child(d)
+		d.global_transform = Transform3D(mi.global_basis.orthonormalized(), mi.global_position)
+		d.setup(copy)
+		d.linear_velocity = vel * 0.8 + Vector3(randf_range(-1, 1), randf_range(0, 1.2), randf_range(-1, 1)) * 14.0
+		d.angular_velocity = Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 4.0
+	_explode(pos)
+	visible = false
+	collision_layer = 0

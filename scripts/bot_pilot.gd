@@ -21,6 +21,7 @@ var _orbit := 1.0
 var _burst := 0.0
 var _rocket_t := 0.0
 var dbg := ""
+var _bail := 1.0
 const SAFE_ALT := 70.0       # samolot nie schodzi niżej poza nalotem
 const MIN_ALT := 30.0
 const HELI_ALT := 45.0
@@ -35,6 +36,13 @@ func _init(c) -> void:
 
 
 func tick(dt: float) -> void:
+	# maszyna płonie: po chwili namysłu bot się katapultuje (jeśli jest dość wysoko)
+	if craft.hp <= 0.0:
+		_bail -= dt
+		if _bail <= 0.0 and craft.global_position.y - craft.GEAR_H > 20.0:
+			craft.eject()
+		return
+	_bail = randf_range(0.5, 2.0)
 	_retarget -= dt
 	if _retarget <= 0.0 or target == null or not is_instance_valid(target) or target.down:
 		_retarget = 3.0
