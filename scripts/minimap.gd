@@ -13,6 +13,7 @@ var main
 var level
 var _view: Control
 var _roads: ImageTexture
+var _world: ImageTexture
 var _zoom := 1.6           # piksele na metr
 
 
@@ -33,6 +34,7 @@ func _ready() -> void:
 			var v := img.get_pixel(x, y).r
 			img.set_pixel(x, y, Color(0.72, 0.68, 0.58, v * 0.85))
 	_roads = ImageTexture.create_from_image(img)
+	_world = ImageTexture.create_from_image(level.terrain.map_img)
 
 
 func _process(dt: float) -> void:
@@ -73,6 +75,8 @@ func _draw_map() -> void:
 	var th := _heading()
 	v.draw_set_transform(c, -th, Vector2(_zoom, _zoom))
 	var o := Vector2(-me.x, -me.z)
+	var ws: float = level.terrain.WORLD
+	v.draw_texture_rect(_world, Rect2(o + Vector2(-ws, -ws), Vector2(ws * 2.0, ws * 2.0)), false, Color(1, 1, 1, 0.75))
 	var hs: float = Level.HALF
 	v.draw_texture_rect(_roads, Rect2(o + Vector2(-hs, -hs), Vector2(hs * 2.0, hs * 2.0)), false)
 	v.draw_rect(Rect2(o + Vector2(-hs, -hs), Vector2(hs * 2.0, hs * 2.0)), Color(0.85, 0.75, 0.5, 0.6), false, 2.0 / _zoom)
@@ -119,6 +123,14 @@ func _draw_map() -> void:
 		var s := 7.0 / _zoom
 		var side := Vector2(-dir.y, dir.x)
 		v.draw_colored_polygon(PackedVector2Array([q + dir * s * 1.4, q - dir * s + side * s, q - dir * s * 0.4, q - dir * s - side * s]), col)
+	# punkt nawigacyjny (przy krawędzi, gdy poza minimapą)
+	if main.waypoint != Vector3.INF:
+		var wq := o + Vector2(main.waypoint.x, main.waypoint.z)
+		var lim := (SIZE * 0.5 - 8.0) / _zoom
+		if wq.length() > lim:
+			wq = wq.normalized() * lim
+		var r := 6.0 / _zoom
+		v.draw_colored_polygon(PackedVector2Array([wq + Vector2(0, -r), wq + Vector2(r, 0), wq + Vector2(0, r), wq + Vector2(-r, 0)]), Color(0.3, 1.0, 0.9))
 	v.draw_set_transform(c, 0.0, Vector2.ONE)
 	# ja: strzałka w środku, zawsze w górę
 	var col_me := Color(1.0, 0.92, 0.35)

@@ -54,6 +54,7 @@ func _draw() -> void:
 		_draw_lock(font, vs)
 		_draw_plane_hint(font, vs)
 	_draw_damage_dirs(vs)
+	_draw_waypoint(font, vs)
 	_draw_kills(font, vs)
 	_draw_vitals(font, vs)
 	if player.message_t > 0.0:
@@ -417,6 +418,38 @@ func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 	if pl.on_ground and pl.throttle < 0.05 and pl.velocity.length() < 1.0:
 		_center_text(font, "W — gaz do startu, spójrz lekko w górę przy ~110 km/h", Vector2(c.x, c.y + 150), 16, Color(0.85, 1.0, 0.8, 0.85))
 	_draw_countermeasures(font, vs, pl, Vector2(x, y - 52))
+
+
+## Punkt nawigacyjny z mapy [M]: romb nad miejscem (albo strzałka przy krawędzi ekranu) i odległość.
+func _draw_waypoint(font: Font, vs: Vector2) -> void:
+	var main = get_tree().current_scene
+	if main == null or main.get("waypoint") == null or main.waypoint == Vector3.INF:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var wp: Vector3 = main.waypoint + Vector3(0, 2.0, 0)
+	var d := Vector2(wp.x - cam.global_position.x, wp.z - cam.global_position.z).length()
+	var col := Color(0.3, 1.0, 0.9, 0.95)
+	var c := vs * 0.5
+	var sp: Vector2
+	var on_screen := false
+	if not cam.is_position_behind(wp):
+		sp = cam.unproject_position(wp)
+		on_screen = Rect2(Vector2(30, 30), vs - Vector2(60, 60)).has_point(sp)
+	if not on_screen:
+		# kierunek do punktu względem patrzenia: strzałka na brzegu elipsy wokół środka
+		var lp := cam.global_basis.inverse() * (wp - cam.global_position)
+		var dir := Vector2(lp.x, -lp.y).normalized() if Vector2(lp.x, lp.y).length() > 0.01 else Vector2.UP
+		if lp.z > 0.0 and absf(lp.x) < 0.01:
+			dir = Vector2.DOWN
+		sp = c + Vector2(dir.x * (vs.x * 0.5 - 50.0), dir.y * (vs.y * 0.5 - 50.0))
+		draw_colored_polygon(PackedVector2Array([sp + dir * 14.0, sp + Vector2(-dir.y, dir.x) * 8.0, sp - Vector2(-dir.y, dir.x) * 8.0]), col)
+	else:
+		var r := 8.0
+		draw_colored_polygon(PackedVector2Array([sp + Vector2(0, -r), sp + Vector2(r, 0), sp + Vector2(0, r), sp + Vector2(-r, 0)]), Color(col, 0.35))
+		draw_polyline(PackedVector2Array([sp + Vector2(0, -r), sp + Vector2(r, 0), sp + Vector2(0, r), sp + Vector2(-r, 0), sp + Vector2(0, -r)]), col, 2.0)
+	_center_text(font, "%d m" % int(d) if d < 1000.0 else "%.1f km" % (d / 1000.0), sp + Vector2(0, 26), 13, col)
 
 
 ## Śmigłowiec: celownik wieżyczki i rakiet, przyrządy, uzbrojenie, flary, ostrzeżenia.

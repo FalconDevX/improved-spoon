@@ -13,6 +13,7 @@ const Level = preload("res://scripts/level.gd")
 const Aircraft = preload("res://scripts/plane.gd")
 const Heli = preload("res://scripts/heli.gd")
 const AA = preload("res://scripts/aa.gd")
+const BigMap = preload("res://scripts/bigmap.gd")
 const AmmoCrate = preload("res://scripts/ammo_crate.gd")
 const Clouds = preload("res://scripts/clouds.gd")
 const Grass = preload("res://scripts/grass.gd")
@@ -27,6 +28,7 @@ const RESPAWN_PVP := 5.0
 const MAX_CORPSES := 6
 
 var _level: Level
+var waypoint := Vector3.INF      # punkt nawigacyjny z mapy [M]
 var _player: Node3D
 var _hud
 var _xray := false
@@ -526,6 +528,11 @@ func _make_hud(player: Node) -> void:
 	mm.main = self
 	mm.level = _level
 	layer.add_child(mm)
+	var bm := BigMap.new()
+	bm.theme = UiTheme.hud()
+	bm.main = self
+	bm.level = _level
+	layer.add_child(bm)
 
 
 
@@ -565,6 +572,7 @@ func _setup_input() -> void:
 	_key("lean_right", KEY_E)
 	_key("grenade", KEY_G)
 	_key("flares", KEY_C)
+	_key("map", KEY_M)
 	_key("walk_toggle", KEY_X)
 	_key("xray", KEY_TAB)
 	_key("restart", KEY_F5)

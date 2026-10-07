@@ -340,9 +340,9 @@ func _build_map_image() -> void:
 			var h := height(x, z)
 			var hx := height(x + step, z)
 			var hz := height(x, z + step)
-			var shade := clampf(1.0 + ((h - hx) - (h - hz) * 0.6) * 0.06, 0.55, 1.35)
+			var shade := clampf(1.0 + ((h - hx) - (h - hz) * 0.6) * 0.04, 0.65, 1.25)
 			var c := Color(0.26, 0.33, 0.18).lerp(Color(0.42, 0.4, 0.3), smoothstep(40.0, 200.0, h))
-			c = c.lerp(Color(0.85, 0.87, 0.9), smoothstep(300.0, 380.0, h))
+			c = c.lerp(Color(0.85, 0.87, 0.9), smoothstep(350.0, 420.0, h))
 			if forest_density(x, z) > 0.45:
 				c = c.lerp(Color(0.12, 0.2, 0.1), 0.6)
 			if RUNWAY.has_point(Vector2(x, z)):
