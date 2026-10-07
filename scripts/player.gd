@@ -159,7 +159,7 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e.is_action_released("attack"):
 		_trigger = false
 	elif e.is_action_pressed("reload"):
-		if bandaging < 0.0 and _switch_t <= 0.0:
+		if bandaging < 0.0 and _switch_t <= 0.0 and repair_target() == null:
 			start_reload()
 	elif e.is_action_pressed("fire_mode"):
 		if gun and (gun.data["modes"] as Array).size() > 1:
@@ -294,6 +294,7 @@ func _physics_process(dt: float) -> void:
 	_movement(dt)
 	_fire_logic()
 	_tick_lock(dt)
+	_tick_repair(dt)
 
 
 func _movement(dt: float) -> void:
@@ -953,6 +954,45 @@ func _spawn_grenade(origin: Vector3, v: Vector3) -> void:
 	g.shooter = self
 	get_parent().add_child(g)
 	g.global_position = origin
+
+
+# ---------------------------------------------------------------- naprawa maszyn (przytrzymaj R)
+
+const REPAIR_TIME := 6.0       # od zera do pełna [s]
+const REPAIR_STEP := 0.5
+
+var repair_t := 0.0            # jak długo trzymam R przy maszynie
+var _repair_acc := 0.0
+
+
+## Uszkodzony śmigłowiec / samolot na ziemi obok mnie, bez pilota (nie wrak).
+func repair_target() -> Node3D:
+	if down or vehicle:
+		return null
+	for a in get_tree().get_nodes_in_group("aircraft"):
+		if a.destroyed or a.hp <= 0.0 or a.hp >= a.MAX_HP or a.pilot != null or not a.on_ground:
+			continue
+		if global_position.distance_to(a.global_position - Vector3(0, a.GEAR_H, 0)) < 6.5:
+			return a
+	return null
+
+
+func _tick_repair(dt: float) -> void:
+	var a := repair_target()
+	if a == null or not Input.is_action_pressed("reload") or bandaging >= 0.0:
+		repair_t = 0.0
+		_repair_acc = 0.0
+		return
+	repair_t += dt
+	_repair_acc += dt
+	reloading = -1.0
+	rig.reload_p = -1.0
+	if _repair_acc >= REPAIR_STEP:
+		_repair_acc -= REPAIR_STEP
+		a._damage(-a.MAX_HP * REPAIR_STEP / REPAIR_TIME)
+		FX.I.play("bolt" if randf() < 0.5 else "mag_in", a.global_position, -6.0, 0.15, randf_range(0.8, 1.2), 20.0)
+		if a.hp >= a.MAX_HP:
+			_msg("Naprawione")
 
 
 # ---------------------------------------------------------------- wyrzutnia przeciwlotnicza (Piorun)

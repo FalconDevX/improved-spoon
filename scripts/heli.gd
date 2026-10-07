@@ -762,7 +762,7 @@ func _apply_damage(d: float) -> void:
 	if destroyed:
 		return
 	var was := hp
-	hp -= d
+	hp = minf(hp - d, MAX_HP)   # ujemne d = naprawa (gracz z kluczem, [R])
 	if hp <= 0.0 and was > 0.0:
 		if _local_pilot():
 			pilot._msg("ŚMIGŁOWIEC TRAFIONY — SPADASZ!")

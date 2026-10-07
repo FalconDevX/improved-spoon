@@ -319,6 +319,14 @@ func _draw_pvp(font: Font, vs: Vector2) -> void:
 func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 	if player.down:
 		return
+	var rt = player.repair_target()
+	if rt != null:
+		var k: float = rt.hp / rt.MAX_HP
+		var what := "śmigłowiec" if rt.get("is_heli") == true else "samolot"
+		var at := Vector2(vs.x * 0.5, vs.y * 0.5 + 180)
+		_center_text(font, "[R] przytrzymaj — napraw %s (%d%%)" % [what, int(k * 100.0)], at, 17, Color(0.8, 0.95, 1.0))
+		draw_rect(Rect2(at.x - 80, at.y + 8, 160, 5), Color(1, 1, 1, 0.2))
+		draw_rect(Rect2(at.x - 80, at.y + 8, 160 * k, 5), Color(0.5, 0.9, 1.0) if player.repair_t > 0.0 else Color(0.8, 0.8, 0.8, 0.7))
 	for pl in get_tree().get_nodes_in_group("plane"):
 		if pl.can_board(player):
 			_center_text(font, "[F] — wsiądź do %s" % String(pl.get("board_name") if pl.get("board_name") != null else "samolotu"),Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
