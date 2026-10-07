@@ -18,18 +18,18 @@ const Debris = preload("res://scripts/debris.gd")
 
 const LAYER := 32
 const GRAVITY := 9.81
-const GEAR_H := 1.55                       # od osi kadłuba do spodu kół
-const SEAT := Vector3(0, -0.42, 0.6)       # stopy pilota (pozycja gracza) w układzie samolotu
-const EYE := Vector3(0, 0.86, 0.5)         # oczy pilota w kabinie
-const THRUST := 13.0                       # m/s² przy pełnym gazie
+var GEAR_H := 1.55                       # od osi kadłuba do spodu kół
+var SEAT := Vector3(0, -0.42, 0.6)       # stopy pilota (pozycja gracza) w układzie samolotu
+var EYE := Vector3(0, 0.86, 0.5)         # oczy pilota w kabinie
+var THRUST := 13.0                       # m/s² przy pełnym gazie
 const CD0 := 0.0019
 const K_LIFT := 0.012
 const K_IND := 0.0017
 const K_SIDE := 0.02
 const STALL_AOA := 0.28
-const PITCH_RATE := 1.1
-const ROLL_RATE := 2.3
-const YAW_RATE := 0.4
+var PITCH_RATE := 1.1
+var ROLL_RATE := 2.3
+var YAW_RATE := 0.4
 const INERTIA := 3.2                       # jak szybko samolot osiąga zadaną prędkość obrotu [1/s]
 const CTRL_RATE := 5.0                     # jak szybko wychylają się stery [1/s]
 const AIM_SMOOTH := 4.0                    # wygładzenie punktu, za którym podąża instruktor [1/s]
@@ -37,14 +37,20 @@ const K_STAB := 1.6
 const K_STAB_Y := 3.0
 const GROUND_STEER := 0.9
 const CRASH_VY := 9.0
-const MAX_HP := 160.0
-const AMMO := 1600                         # 4 × 400 naboi
-const BOMBS := 12                          # 12 × 50 kg pod skrzydłami, zrzut całą serią (nalot dywanowy)
+var MAX_HP := 160.0
+var AMMO := 1600                         # 4 × 400 naboi
+var BOMBS := 12                          # 12 × 50 kg pod skrzydłami, zrzut całą serią (nalot dywanowy)
 const BOMB_RELOAD := 8.0                   # bomby bez limitu: po serii pełne przeładowanie w powietrzu [s]
 const BOMB_DT := 0.11                      # odstęp między bombami w serii
 const GUN_DT := 0.02                       # odstęp między strzałami kolejnych karabinów (4 × 750/min)
 const CONVERGE := 280.0
-const GUNS := [Vector3(-2.1, -0.36, -1.75), Vector3(2.1, -0.36, -1.75), Vector3(-2.55, -0.34, -1.7), Vector3(2.55, -0.34, -1.7)]
+# (zmienne, nie stałe: inne samoloty — np. C-130 — nadpisują je w _init)
+var BOARD := Vector3.ZERO                  # punkt wsiadania (układ samolotu) i jego zasięg
+var BOARD_R := 5.0
+var EXIT := Vector3(-2.0, 0, 0.9)          # gdzie staje wysiadający
+var CAM_DIST := 15.0                       # kamera za samolotem
+var CAM_UP := 3.2
+var GUNS := [Vector3(-2.1, -0.36, -1.75), Vector3(2.1, -0.36, -1.75), Vector3(-2.55, -0.34, -1.7), Vector3(2.55, -0.34, -1.7)]
 const RESPAWN := 25.0
 const BOUND := 1400.0
 const MOUSE_SENS := 0.0019
@@ -64,6 +70,7 @@ var home: Transform3D
 var paint := Color(0.33, 0.38, 0.25)
 var pilot = null
 var ai = null                  # bot-pilot (bot_pilot.gd)
+var ai_aim := Vector3.INF      # bot: punkt z wyprzedzeniem, na który składa karabiny (±20° od osi)
 var auth := 0                  # PvP: id komputera, który symuluje samolot (0 = nikt, stoi)
 var hp := MAX_HP
 var throttle := 0.0
@@ -131,14 +138,7 @@ func _ready() -> void:
 	_mg.cal = Weapons.CAL["12.7x99"]
 	_mg.data = {"v0": 870.0, "zero": CONVERGE, "cal": "12.7x99"}
 	_build_model()
-	for s in [[Vector3(1.3, 1.35, 8.4), Vector3(0, 0, 0.6)], [Vector3(10.8, 0.3, 2.1), Vector3(0, -0.45, -0.95)],
-			[Vector3(3.6, 0.2, 1.1), Vector3(0, 0.15, 5.1)]]:
-		var cs := CollisionShape3D.new()
-		var bs := BoxShape3D.new()
-		bs.size = s[0]
-		cs.shape = bs
-		cs.position = s[1]
-		add_child(cs)
+	_build_collision()
 	_snd = AudioStreamPlayer3D.new()
 	_snd.stream = FX._cache["engine"]
 	_snd.unit_size = 14.0
@@ -159,6 +159,22 @@ func _ready() -> void:
 		for f in [net_plane, net_board, net_exit, net_damage, net_explode, net_bomb, net_flares, net_locked, net_board_bot, net_eject]:
 			gd.expose_func(f)
 	_reset()
+
+
+## Kolizja kadłuba, skrzydeł i usterzenia (prostopadłościany: rozmiar, środek).
+func _collision_boxes() -> Array:
+	return [[Vector3(1.3, 1.35, 8.4), Vector3(0, 0, 0.6)], [Vector3(10.8, 0.3, 2.1), Vector3(0, -0.45, -0.95)],
+		[Vector3(3.6, 0.2, 1.1), Vector3(0, 0.15, 5.1)]]
+
+
+func _build_collision() -> void:
+	for s in _collision_boxes():
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = s[0]
+		cs.shape = bs
+		cs.position = s[1]
+		add_child(cs)
 
 
 func _gd() -> Node:
@@ -458,7 +474,7 @@ func _emitter(c0: Color, c1: Color, life: float, size: float, add: bool) -> GPUP
 func can_board(p) -> bool:
 	if destroyed or hp <= 0.0 or pilot != null or not on_ground or velocity.length() > 3.0:
 		return false
-	return p.global_position.distance_to(global_position - Vector3(0, GEAR_H, 0)) < 5.0
+	return p.global_position.distance_to(global_position + global_basis * BOARD - Vector3(0, GEAR_H, 0)) < BOARD_R
 
 
 func board(p) -> void:
@@ -515,7 +531,7 @@ func _unseat(place: bool) -> void:
 
 ## Miejsce obok kabiny, gdzie staje wysiadający pilot.
 func exit_point() -> Vector3:
-	var p := global_transform * Vector3(-2.0, 0, 0.9)
+	var p := global_transform * EXIT
 	p.y = global_position.y - GEAR_H
 	return p
 
@@ -948,7 +964,7 @@ func _guns(dt: float) -> void:
 	if _flash_t <= 0.0:
 		for f: Node3D in _flashes:
 			f.visible = false
-	var can: bool = trigger and pilot != null and is_instance_valid(pilot) and not pilot.down and hp > 0.0
+	var can: bool = trigger and pilot != null and is_instance_valid(pilot) and not pilot.down and hp > 0.0 and not GUNS.is_empty()
 	if _local_pilot() or not Player.net_on:
 		can = can and ammo > 0
 	if not can:
@@ -966,7 +982,11 @@ func _guns(dt: float) -> void:
 func _fire_gun(i: int) -> void:
 	var m := global_transform * (GUNS[i] as Vector3) + (-global_basis.z) * 0.45
 	var d := (gun_point() - m).normalized()
-	d = _jitter(d, 0.0018)
+	if ai_aim != Vector3.INF and _ai_on():
+		var to := (ai_aim - m).normalized()
+		if (-global_basis.z).angle_to(to) < 0.35:
+			d = to
+	d = _jitter(d, 0.0018 if ai_aim == Vector3.INF else 0.006)
 	_shot_n += 1
 	if _local_pilot() or not Player.net_on:
 		ammo -= 1
@@ -1153,7 +1173,7 @@ func _place_camera(rd: float) -> void:
 		_cam.fov = lerpf(_cam.fov, Settings.fov + 2.0 + clampf(spd / 80.0, 0.0, 1.0) * 6.0, 1.0 - exp(-2.0 * rd))
 	else:
 		# kamera za samolotem: kierunek od razu za myszą, pozycja płynnie dogania
-		var tgt := global_position - aim * 15.0 + Vector3.UP * 3.2
+		var tgt := global_position - aim * CAM_DIST + Vector3.UP * CAM_UP
 		var k := 1.0 - exp(-7.0 * rd)
 		if _cam.global_position.distance_to(tgt) > 40.0:
 			_cam.global_position = tgt

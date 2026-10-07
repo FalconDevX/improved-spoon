@@ -12,6 +12,7 @@ const Hud = preload("res://scripts/hud.gd")
 const Level = preload("res://scripts/level.gd")
 const Aircraft = preload("res://scripts/plane.gd")
 const Heli = preload("res://scripts/heli.gd")
+const C130 = preload("res://scripts/c130.gd")
 const AA = preload("res://scripts/aa.gd")
 const BigMap = preload("res://scripts/bigmap.gd")
 const AmmoCrate = preload("res://scripts/ammo_crate.gd")
@@ -508,6 +509,11 @@ func _spawn_planes() -> void:
 		aa.position = s[1]
 		aa.rotation.y = s[2]
 		add_child(aa)
+	for i in _level.transport_spots.size():
+		var t := C130.new()
+		t.name = "Transport%d" % (i + 1)
+		t.transform = _level.transport_spots[i]
+		add_child(t)
 	for i in _level.heli_spots.size():
 		var h := Heli.new()
 		h.name = "Heli%d" % (i + 1)

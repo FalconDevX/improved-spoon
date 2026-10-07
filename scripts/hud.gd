@@ -377,19 +377,21 @@ func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 	draw_rect(Rect2(x - 12, y - 30, 300, 190), Color(0, 0, 0, 0.35))
 	var spd: float = pl.velocity.length() * 3.6
 	draw_string(font, Vector2(x, y), "PRĘDKOŚĆ  %d km/h" % int(spd), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.92, 0.7))
-	draw_string(font, Vector2(x, y + 24), "WYSOKOŚĆ  %d m" % int(maxf(pl.global_position.y - Aircraft.GEAR_H, 0.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.92, 0.7))
+	draw_string(font, Vector2(x, y + 24), "WYSOKOŚĆ  %d m" % int(maxf(pl.global_position.y - pl.GEAR_H, 0.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.92, 0.7))
 	var climb: float = pl.velocity.y
 	draw_string(font, Vector2(x, y + 46), "wznoszenie %+.1f m/s" % climb, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
 	_bar(Vector2(x, y + 60), 160, pl.throttle, Color(0.9, 0.75, 0.3), "gaz %d%% [W/S]" % int(pl.throttle * 100.0), font)
-	var hpk: float = pl.hp / Aircraft.MAX_HP
+	var hpk: float = pl.hp / pl.MAX_HP
 	_bar(Vector2(x, y + 80), 160, hpk, Color(0.45, 0.85, 0.45) if hpk > 0.5 else (Color(1, 0.7, 0.2) if hpk > 0.25 else Color(1, 0.3, 0.2)), "płatowiec %d%%" % int(maxf(hpk, 0.0) * 100.0), font)
 	var am: int = pl.ammo
-	draw_string(font, Vector2(x, y + 124), "%d" % am, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color(1, 1, 1) if am > 0 else Color(1, 0.35, 0.3))
-	draw_string(font, Vector2(x + 90, y + 124), "4 × KM 12,7 mm", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
+	var armed: bool = not pl.GUNS.is_empty()
+	if armed:
+		draw_string(font, Vector2(x, y + 124), "%d" % am, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color(1, 1, 1) if am > 0 else Color(1, 0.35, 0.3))
+	draw_string(font, Vector2(x + 90, y + 124), "4 × KM 12,7 mm" if armed else "transportowiec — bez uzbrojenia strzeleckiego", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
 	if not show_help:
 		draw_string(font, Vector2(x, y + 168), "F1 — sterowanie samolotem", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
 	var nb: int = pl.bombs
-	if nb < Aircraft.BOMBS:
+	if nb < pl.BOMBS:
 		var rk: float = pl.bomb_reload / Aircraft.BOMB_RELOAD
 		_bar(Vector2(x, y + 138), 160, rk, Color(1, 0.75, 0.3), "bomby: przeładowanie %d s" % ceili(Aircraft.BOMB_RELOAD - pl.bomb_reload), font)
 	else:
@@ -397,13 +399,13 @@ func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 	if cam:
 		_draw_bomb_sight(cam, pl, nb)
 		_draw_air_targets(font, cam, pl)
-	if pl.on_ground and pl.velocity.length() < 2.0 and pl.global_position.distance_to(pl.home.origin) < 45.0 and (am < Aircraft.AMMO or pl.hp < Aircraft.MAX_HP):
+	if pl.on_ground and pl.velocity.length() < 2.0 and pl.global_position.distance_to(pl.home.origin) < 45.0 and (am < pl.AMMO or pl.hp < pl.MAX_HP):
 		_center_text(font, "Dozbrajanie i naprawa...", Vector2(c.x, c.y + 180), 16, Color(0.8, 1, 0.8))
 	# ostrzeżenia
 	var warns := PackedStringArray()
 	if pl.hp <= 0.0:
 		warns.append("SAMOLOT W OGNIU — SPADASZ")
-	elif pl.hp < Aircraft.MAX_HP * 0.25:
+	elif pl.hp < pl.MAX_HP * 0.25:
 		warns.append("SILNIK USZKODZONY")
 	if pl.stall:
 		warns.append("PRZECIĄGNIĘCIE — OPUŚĆ NOS")
@@ -411,7 +413,7 @@ func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 		warns.append(pl.warn)
 	if not pl.on_ground and pl.global_position.y < 25.0 and pl.velocity.y < -8.0:
 		warns.append("ZIEMIA — PODCIĄGNIJ")
-	if am <= 0:
+	if am <= 0 and armed:
 		warns.append("BRAK AMUNICJI — WYLĄDUJ NA LOTNISKU")
 	var blink := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)
 	for i in warns.size():

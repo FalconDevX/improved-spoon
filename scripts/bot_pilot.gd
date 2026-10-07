@@ -26,7 +26,8 @@ const SAFE_ALT := 70.0       # samolot nie schodzi niżej poza nalotem
 const MIN_ALT := 30.0
 const HELI_ALT := 45.0
 const CENTER := Vector2(250, 0)      # środek doliny (terrain.gd)
-const RANGE := Vector2(800, 240)     # samolot zawraca przed zboczami gór
+const RANGE := Vector2(720, 170)     # samolot zawraca przed zboczami gór
+const Terrain = preload("res://scripts/terrain.gd")
 
 
 func _init(c) -> void:
@@ -108,13 +109,21 @@ func _plane(dt: float) -> void:
 	var nose: Vector3 = -craft.global_basis.z
 	throttle = 1.0
 	craft.trigger = false
+	craft.ai_aim = Vector3.INF
 	if craft.on_ground:
 		# rozbieg: prosto, przy ~110 km/h nos lekko w górę
 		var flat := Vector3(nose.x, 0, nose.z).normalized()
 		_set_aim(flat + Vector3.UP * (0.3 if v > 31.0 else 0.0))
 		return
-	# granica obszaru: zawróć do środka
+	# teren przed nosem (góry wokół doliny): za mało miejsca — w górę i do środka doliny
 	var rel := Vector2(p.x - CENTER.x, p.z - CENTER.y)
+	var ahead: Vector3 = p + craft.velocity * 4.0
+	var clear: float = minf(ahead.y - Terrain.height(ahead.x, ahead.z), p.y - Terrain.height(p.x, p.z))
+	if clear < 70.0:
+		_set_aim(Vector3(-rel.x, 0, -rel.y).normalized() * 0.6 + Vector3.UP * (1.0 if clear < 35.0 else 0.6))
+		_extend = maxf(_extend, 1.0)
+		return
+	# granica obszaru: zawróć do środka
 	if (rel / RANGE).length() > 1.0:
 		_set_aim(Vector3(-rel.x, 0, -rel.y).normalized() + Vector3.UP * (0.3 if alt < SAFE_ALT else 0.0))
 		return
@@ -150,7 +159,8 @@ func _plane(dt: float) -> void:
 		dir = Vector3(dir.x, maxf(dir.y, 0.25), dir.z).normalized()
 	_set_aim(dir)
 	var ang := nose.angle_to(aim - p)
-	if dist < 700.0 and ang < 0.2 and alt > 12.0:
+	craft.ai_aim = aim
+	if dist < 750.0 and ang < 0.33 and alt > 10.0:
 		craft.trigger = true
 	# bomby: cel pod przewidywanym punktem upadku
 	if craft.bombs > 0 and alt > 60.0:
