@@ -22,6 +22,7 @@ var _burst := 0.0
 var _rocket_t := 0.0
 var dbg := ""
 var _bail := 1.0
+var _need_up := false
 const SAFE_ALT := 70.0       # samolot nie schodzi niżej poza nalotem
 const MIN_ALT := 30.0
 const HELI_ALT := 45.0
@@ -82,6 +83,9 @@ func _flares(dt: float) -> void:
 
 func _set_aim(dir: Vector3) -> void:
 	dir = dir.normalized()
+	if _need_up and not heli:
+		dir = Vector3(dir.x, maxf(dir.y, 0.55), dir.z).normalized()
+		dbg += " (w górę: teren)"
 	craft._aim_yaw = atan2(-dir.x, -dir.z)
 	craft._aim_pitch = asin(clampf(dir.y, -1.0, 1.0))
 
@@ -115,16 +119,11 @@ func _plane(dt: float) -> void:
 		var flat := Vector3(nose.x, 0, nose.z).normalized()
 		_set_aim(flat + Vector3.UP * (0.3 if v > 31.0 else 0.0))
 		return
-	# teren przed nosem (góry wokół doliny): za mało miejsca — w górę i do środka doliny
+	# teren przed nosem: nie zmienia planu, tylko podnosi nos, gdy za 1,5–3 s byłoby za nisko
 	var rel := Vector2(p.x - CENTER.x, p.z - CENTER.y)
-	var ahead: Vector3 = p + craft.velocity * 4.0
-	var ground_ahead := maxf(Terrain.height(ahead.x, ahead.z), Terrain.height(p.x + craft.velocity.x * 2.0, p.z + craft.velocity.z * 2.0))
-	var clear: float = ahead.y - ground_ahead
-	if ground_ahead > 15.0 and clear < 60.0:
-		dbg = "TEREN clear=%d" % clear
-		_set_aim(Vector3(-rel.x, 0, -rel.y).normalized() * 0.6 + Vector3.UP * (1.0 if clear < 35.0 else 0.6))
-		_extend = maxf(_extend, 1.0)
-		return
+	var v3: Vector3 = craft.velocity
+	var floor_y := maxf(Terrain.height(p.x + v3.x * 1.5, p.z + v3.z * 1.5), Terrain.height(p.x + v3.x * 3.0, p.z + v3.z * 3.0)) + 55.0
+	_need_up = maxf(p.y + v3.y * 1.5, p.y) < floor_y and floor_y > 70.0
 	# granica obszaru: zawróć do środka
 	if (rel / RANGE).length() > 1.0:
 		dbg = "GRANICA rel=%s" % rel
@@ -161,7 +160,7 @@ func _plane(dt: float) -> void:
 	var ang := nose.angle_to(aim - p)
 	dbg = "ATAK dist=%d ang=%.2f" % [dist, ang]
 	craft.ai_aim = aim
-	if dist < 750.0 and ang < 0.33 and alt > 10.0:
+	if dist < 900.0 and ang < 0.45 and alt > 10.0:
 		craft.trigger = true
 	# bomby: cel pod przewidywanym punktem upadku
 	if craft.bombs > 0 and alt > 60.0:
@@ -169,7 +168,7 @@ func _plane(dt: float) -> void:
 		if Vector2(bi.x - tp.x, bi.z - tp.z).length() < 12.0:
 			craft.start_salvo()
 	if dist < 160.0:
-		_extend = randf_range(3.5, 5.0)
+		_extend = randf_range(2.0, 3.0)
 
 
 # ---------------------------------------------------------------- śmigłowiec

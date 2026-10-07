@@ -1028,9 +1028,9 @@ func _fire_gun(i: int) -> void:
 	var d := (gun_point() - m).normalized()
 	if ai_aim != Vector3.INF and _ai_on():
 		var to := (ai_aim - m).normalized()
-		if (-global_basis.z).angle_to(to) < 0.35:
+		if (-global_basis.z).angle_to(to) < 0.45:
 			d = to
-	d = _jitter(d, 0.0018 if ai_aim == Vector3.INF else 0.006)
+	d = _jitter(d, 0.0018 if ai_aim == Vector3.INF else 0.0035)
 	_shot_n += 1
 	if _local_pilot() or not Player.net_on:
 		ammo -= 1
