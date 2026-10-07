@@ -142,6 +142,7 @@ var _bot_queue: Array = []       # czasy odrodzenia zabitych botów
 var _bot_corpses: Array = []
 var _bot_net_t := 0.0
 var _got_bots := false
+var _air_t := 2.0
 var _clock := 0.0
 
 
@@ -211,6 +212,10 @@ func _tick_bots(dt: float) -> void:
 	_clock += dt
 	if not is_instance_valid(_player) or (Player.net_on and not _pvp_host):
 		return
+	_air_t -= dt
+	if _air_t <= 0.0:
+		_air_t = 4.0
+		_staff_aircraft()
 	# odradzanie: posterunek daleko od graczy
 	if not _bot_queue.is_empty() and _clock >= float(_bot_queue[0]):
 		_bot_queue.pop_front()
@@ -242,6 +247,38 @@ func _tick_bots(dt: float) -> void:
 			k = 0
 	if k > 0:
 		gd.call_func_unreliable(net_bots_state, f)
+
+
+## Boty-piloci: wolne maszyny na lotnisku / lądowiskach dostają pilota, aż będzie ich tyle, ile w opcjach.
+func _staff_aircraft() -> void:
+	if not _level.is_ready():
+		return
+	var crafts: Array = get_tree().get_nodes_in_group("aircraft")
+	var flying := 0
+	for a in crafts:
+		if a.ai != null and a.pilot != null and is_instance_valid(a.pilot) and not a.pilot.down:
+			flying += 1
+	if flying >= Settings.air_bots:
+		return
+	# na zmianę śmigłowce i samoloty, tylko maszyny stojące na swoim miejscu, bez pilota
+	crafts.shuffle()
+	crafts.sort_custom(func(a, b): return int(a.get("is_heli") == true) > int(b.get("is_heli") == true) if flying % 2 == 0 else int(a.get("is_heli") == true) < int(b.get("is_heli") == true))
+	for a in crafts:
+		if a.destroyed or a.pilot != null or not a.on_ground or a.global_position.distance_to(a.home.origin) > 3.0:
+			continue
+		var npc := Npc.new()
+		_bot_n += 1
+		npc.name = "Bot%d" % _bot_n
+		npc.position = a.global_position
+		add_child(npc)
+		npc.downed.connect(_on_pilot_down)
+		_send_bots([npc])
+		a.board_bot(npc)
+		return
+
+
+func _on_pilot_down(npc: Node) -> void:
+	_keep_corpse(npc)
 
 
 func _bot_info(b: Node) -> Array:

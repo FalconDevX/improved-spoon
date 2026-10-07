@@ -14,6 +14,7 @@ const FX = preload("res://scripts/fx.gd")
 const Ballistics = preload("res://scripts/ballistics.gd")
 const Flare = preload("res://scripts/flare.gd")
 const Rocket = preload("res://scripts/rocket.gd")
+const BotPilot = preload("res://scripts/bot_pilot.gd")
 
 const LAYER := 32
 const GRAVITY := 9.81
@@ -27,7 +28,7 @@ const ROCKET_RELOAD := 10.0                # rakiety bez limitu: po wystrzelaniu
 const ROCKET_DT := 0.16
 const ROCKET_V0 := 120.0
 const ROCKET_CONE := 0.35                  # rakiety lecą najwyżej tyle od osi kadłuba [rad]
-const GUN_DT := 0.045
+const GUN_DT := 0.09             # salwa z obu luf naraz
 const GUN_CONE := 1.6                      # zakres obrotu wieżyczki od osi [rad]
 const FLARES := 4
 const FLARE_RELOAD := 12.0
@@ -57,6 +58,7 @@ var is_heli := true
 var home: Transform3D
 var paint := Color(0.3, 0.34, 0.24)
 var pilot = null
+var ai = null
 var auth := 0
 var hp := MAX_HP
 var throttle := 0.0          # dla HUD-u / dźwięku: obroty wirnika
@@ -151,7 +153,7 @@ func _ready() -> void:
 	home = global_transform
 	if Player.net_on:
 		var gd := _gd()
-		for f in [net_heli, net_board, net_exit, net_damage, net_explode, net_rocket, net_flares, net_locked]:
+		for f in [net_heli, net_board, net_exit, net_damage, net_explode, net_rocket, net_flares, net_locked, net_board_bot]:
 			gd.expose_func(f)
 	_reset()
 
@@ -169,7 +171,30 @@ func _sim_here() -> bool:
 
 
 func _local_pilot() -> bool:
-	return pilot != null and is_instance_valid(pilot) and not pilot.is_remote
+	return pilot != null and is_instance_valid(pilot) and not pilot.is_remote and pilot.is_in_group("player")
+
+
+## Maszyną steruje bot-pilot (liczony na tym komputerze).
+func _ai_on() -> bool:
+	return ai != null and pilot != null and is_instance_valid(pilot) and not pilot.down 		and pilot.is_in_group("npc") and not pilot.is_remote and _sim_here()
+
+
+## Bot-pilot wsiada (host / solo); u gościa net_board_bot sadza kukiełkę.
+func board_bot(npc) -> void:
+	ai = BotPilot.new(self)
+	_set_pilot(npc)
+	if Player.net_on:
+		auth = _my_id()
+		_gd().call_func(net_board_bot, String(npc.name))
+
+
+func net_board_bot(n: String) -> void:
+	var p := get_parent().get_node_or_null(n)
+	auth = _gd().get_sender_id()
+	_net_pos = global_position
+	_net_rot = global_basis.get_rotation_quaternion()
+	if p and not p.down:
+		_set_pilot(p)
 
 
 func camera() -> Camera3D:
@@ -461,7 +486,7 @@ func aim_point() -> Vector3:
 
 
 func _update_aim_point() -> void:
-	var dir := aim_dir() if (_local_pilot() or not Player.net_on) else _net_aim
+	var dir := aim_dir() if _sim_here() else _net_aim
 	var from := _cam.global_position if _local_pilot() else global_position
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 900.0, 1 | 4 | LAYER, [get_rid()])
 	var r := get_world_3d().direct_space_state.intersect_ray(q)
@@ -484,6 +509,8 @@ func _physics_process(dt: float) -> void:
 	if pilot != null and (not is_instance_valid(pilot) or pilot.down):
 		pilot = null
 	if _sim_here():
+		if _ai_on():
+			ai.tick(dt)
 		_simulate(dt)
 		if destroyed:
 			return
@@ -512,6 +539,10 @@ func _simulate(dt: float) -> void:
 		fwd = Input.get_axis("move_back", "move_forward")
 		side = Input.get_axis("move_left", "move_right")
 		up = (1.0 if Input.is_action_pressed("jump") else 0.0) - (1.0 if Input.is_action_pressed("crouch") else 0.0)
+	elif live and _ai_on():
+		fwd = ai.fwd
+		side = ai.side
+		up = ai.up
 	rpm = move_toward(rpm, 1.0 if live else (0.55 if hp <= 0.0 and not on_ground else 0.0), dt / SPOOL)
 	throttle = rpm
 	var lift := rpm * rpm
@@ -619,8 +650,8 @@ func _guns(dt: float) -> void:
 	while _gun_t <= 0.0 and guard < 3:
 		guard += 1
 		_gun_t += GUN_DT
-		_fire_gun(_gun_k)
-		_gun_k = (_gun_k + 1) % GUNS.size()
+		for k in GUNS.size():
+			_fire_gun(k)
 
 
 func _fire_gun(i: int) -> void:

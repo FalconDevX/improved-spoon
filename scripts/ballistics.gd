@@ -334,10 +334,12 @@ func _draw_tracers() -> void:
 		var dir := v.normalized()
 		var tail := p - dir * minf(v.length() * 0.014, 9.0)
 		# wstęga zwrócona do kamery; szersza z daleka, żeby było ją widać (min. ~2 px)
-		var w := clampf(p.distance_to(eye) * 0.0018, 0.012, 0.12)
+		var c: Dictionary = b["c"]
+		var w := clampf(p.distance_to(eye) * 0.0018, 0.012, 0.12) * float(c.get("tracer_w", 1.0))
 		var side := dir.cross(eye - p).normalized() * w
-		var hot := Color(1.0, 0.75, 0.45, 1.0)
-		var cold := Color(1.0, 0.3, 0.1, 0.0)
+		# kolor smugi z kalibru (np. zielone 23 mm przeciwlotnicze), domyślnie pomarańczowa
+		var hot: Color = c.get("tracer_hot", Color(1.0, 0.75, 0.45, 1.0))
+		var cold: Color = c.get("tracer_cold", Color(1.0, 0.3, 0.1, 0.0))
 		for t in [[tail - side, cold], [p - side, hot], [p + side, hot], [tail - side, cold], [p + side, hot], [tail + side, cold]]:
 			_im.surface_set_color(t[1])
 			_im.surface_add_vertex(t[0])

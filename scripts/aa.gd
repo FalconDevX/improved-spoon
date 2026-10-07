@@ -12,7 +12,7 @@ const FX = preload("res://scripts/fx.gd")
 const Ballistics = preload("res://scripts/ballistics.gd")
 const Missile = preload("res://scripts/missile.gd")
 
-const GUN_DT := 0.03             # 2 × 1000 strzałów/min
+const GUN_DT := 0.06             # salwa z obu luf naraz (2 × 1000 strzałów/min)
 const BELT := 120
 const BELT_RELOAD := 4.0
 const SAM_ROUNDS := 4
@@ -378,8 +378,8 @@ func _guns(dt: float) -> void:
 	while _gun_t <= 0.0 and guard < 3:
 		guard += 1
 		_gun_t += GUN_DT
-		_fire(_gun_k)
-		_gun_k = (_gun_k + 1) % _muzzles.size()
+		for k in _muzzles.size():
+			_fire(k)
 
 
 func _fire(i: int) -> void:
@@ -389,7 +389,7 @@ func _fire(i: int) -> void:
 	_shot_n += 1
 	if _local() or not Player.net_on:
 		ammo -= 1
-	Ballistics.I.fire(pilot, _ammo, m, d, _shot_n % 2 == 0, Vector3.ZERO, [get_rid()])
+	Ballistics.I.fire(pilot, _ammo, m, d, true, Vector3.ZERO, [get_rid()])
 	var fl: MeshInstance3D = _flashes[i]
 	fl.visible = true
 	fl.scale = Vector3.ONE * randf_range(0.8, 1.4)

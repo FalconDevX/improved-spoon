@@ -21,7 +21,8 @@ const CAL := {
 	"12.7x99": {"name": "12,7×99 mm (.50 BMG) M2", "mass": 0.042, "k": 0.00042, "pen": 1.7, "cavity": 0.03, "frag_v": 0.0, "yaw_depth": 0.25, "armor": 5, "tracer": true},
 	"frag": {"name": "odłamek bomby", "mass": 0.003, "k": 0.02, "pen": 0.24, "cavity": 0.007, "frag_v": 0.0, "armor": 3, "tracer": false},
 	"pg7v": {"name": "PG-7V (rakieta kumulacyjna)", "mass": 2.2, "k": 0.0, "pen": 0.5, "cavity": 0.01, "frag_v": 0.0, "armor": 4, "tracer": false},
-	"23x152": {"name": "23×152 mm (ZU-23-2)", "mass": 0.19, "k": 0.0005, "pen": 2.2, "cavity": 0.05, "frag_v": 0.0, "yaw_depth": 0.2, "armor": 6, "tracer": true},
+	"23x152": {"name": "23×152 mm (ZU-23-2)", "mass": 0.19, "k": 0.0005, "pen": 2.2, "cavity": 0.05, "frag_v": 0.0, "yaw_depth": 0.2, "armor": 6, "tracer": true,
+		"tracer_hot": Color(0.55, 1.0, 0.45, 1.0), "tracer_cold": Color(0.1, 0.9, 0.2, 0.0), "tracer_w": 1.8},
 	"piorun": {"name": "Piorun (rakieta przeciwlotnicza)", "mass": 10.5, "k": 0.0, "pen": 0.5, "cavity": 0.01, "frag_v": 0.0, "armor": 4, "tracer": false},
 	"12ga": {"name": "12/70 śrut 00 Buck (9 × 8,4 mm)", "mass": 0.0035, "k": 0.0044, "pen": 0.32, "cavity": 0.0045, "frag_v": 0.0, "armor": 2, "pellets": 9, "pellet_spread": 0.011, "tracer": false},
 }

@@ -19,6 +19,8 @@ var volume := 0.8
 var bots := 5                # indeks w BOT_COUNTS
 var difficulty := 1
 var bot_respawn := false
+var air_bots := 0             # boty-piloci (samoloty i śmigłowce), 0..AIR_BOTS_MAX
+const AIR_BOTS_MAX := 5
 
 
 func _ready() -> void:
@@ -32,6 +34,7 @@ func _ready() -> void:
 		bots = clampi(int(cf.get_value("game", "bots", bots)), 0, BOT_COUNTS.size() - 1)
 		difficulty = clampi(int(cf.get_value("game", "difficulty", difficulty)), 0, DIFFICULTY.size() - 1)
 		bot_respawn = bool(cf.get_value("game", "bot_respawn", bot_respawn))
+		air_bots = clampi(int(cf.get_value("game", "air_bots", air_bots)), 0, AIR_BOTS_MAX)
 	_apply_audio()
 
 
@@ -45,6 +48,7 @@ func save() -> void:
 	cf.set_value("game", "bots", bots)
 	cf.set_value("game", "difficulty", difficulty)
 	cf.set_value("game", "bot_respawn", bot_respawn)
+	cf.set_value("game", "air_bots", air_bots)
 	cf.save(PATH)
 	_apply_audio()
 	changed.emit()

@@ -13,6 +13,7 @@ const Weapons = preload("res://scripts/weapons.gd")
 const FX = preload("res://scripts/fx.gd")
 const Ballistics = preload("res://scripts/ballistics.gd")
 const Bomb = preload("res://scripts/bomb.gd")
+const BotPilot = preload("res://scripts/bot_pilot.gd")
 
 const LAYER := 32
 const GRAVITY := 9.81
@@ -61,6 +62,7 @@ class MG:
 var home: Transform3D
 var paint := Color(0.33, 0.38, 0.25)
 var pilot = null
+var ai = null                  # bot-pilot (bot_pilot.gd)
 var auth := 0                  # PvP: id komputera, który symuluje samolot (0 = nikt, stoi)
 var hp := MAX_HP
 var throttle := 0.0
@@ -153,7 +155,7 @@ func _ready() -> void:
 	home = global_transform
 	if Player.net_on:
 		var gd := _gd()
-		for f in [net_plane, net_board, net_exit, net_damage, net_explode, net_bomb, net_flares, net_locked]:
+		for f in [net_plane, net_board, net_exit, net_damage, net_explode, net_bomb, net_flares, net_locked, net_board_bot]:
 			gd.expose_func(f)
 	_reset()
 
@@ -171,7 +173,30 @@ func _sim_here() -> bool:
 
 
 func _local_pilot() -> bool:
-	return pilot != null and is_instance_valid(pilot) and not pilot.is_remote
+	return pilot != null and is_instance_valid(pilot) and not pilot.is_remote and pilot.is_in_group("player")
+
+
+## Maszyną steruje bot-pilot (liczony na tym komputerze).
+func _ai_on() -> bool:
+	return ai != null and pilot != null and is_instance_valid(pilot) and not pilot.down 		and pilot.is_in_group("npc") and not pilot.is_remote and _sim_here()
+
+
+## Bot-pilot wsiada (host / solo); u gościa net_board_bot sadza kukiełkę.
+func board_bot(npc) -> void:
+	ai = BotPilot.new(self)
+	_set_pilot(npc)
+	if Player.net_on:
+		auth = _my_id()
+		_gd().call_func(net_board_bot, String(npc.name))
+
+
+func net_board_bot(n: String) -> void:
+	var p := get_parent().get_node_or_null(n)
+	auth = _gd().get_sender_id()
+	_net_pos = global_position
+	_net_rot = global_basis.get_rotation_quaternion()
+	if p and not p.down:
+		_set_pilot(p)
 
 
 func camera() -> Camera3D:
@@ -560,6 +585,8 @@ func _physics_process(dt: float) -> void:
 	if pilot != null and (not is_instance_valid(pilot) or pilot.down):
 		pilot = null
 	if _sim_here():
+		if _ai_on():
+			ai.tick(dt)
 		_simulate(dt)
 		if destroyed:
 			return
@@ -644,6 +671,8 @@ func _simulate(dt: float) -> void:
 	var local := _local_pilot()
 	if local:
 		throttle = clampf(throttle + Input.get_axis("move_back", "move_forward") * 0.6 * dt, 0.0, 1.0)
+	elif _ai_on():
+		throttle = move_toward(throttle, ai.throttle, 0.6 * dt)
 	elif pilot == null and not on_ground:
 		throttle = maxf(throttle - 0.15 * dt, 0.0)   # bez pilota: silnik dławi się, samolot szybuje w dół
 	# siły (przyspieszenia)
@@ -693,12 +722,14 @@ func _cl(a: float) -> float:
 
 ## Wychylenia sterów [-1..1]: x — wysokości, y — kierunku, z — lotki.
 func _controls(b: Basis, aoa: float, dt: float) -> Vector3:
-	if not _local_pilot() or hp <= 0.0:
+	if not (_local_pilot() or _ai_on()) or hp <= 0.0:
 		if pilot != null and is_instance_valid(pilot) and pilot.is_remote:
 			return Vector3.ZERO
 		return Vector3(0.0, 0.0, -atan2(b.x.y, b.y.y) * 0.5 if not on_ground else 0.0)
-	var man := Vector3(Input.get_axis("stick_up", "stick_down"), Input.get_axis("move_left", "move_right"),
-		Input.get_axis("stick_left", "stick_right"))
+	var man := Vector3.ZERO
+	if _local_pilot():
+		man = Vector3(Input.get_axis("stick_up", "stick_down"), Input.get_axis("move_left", "move_right"),
+			Input.get_axis("stick_left", "stick_right"))
 	var right := b.x
 	var up := b.y
 	var fwd := -b.z

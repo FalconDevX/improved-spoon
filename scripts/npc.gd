@@ -59,6 +59,7 @@ static var _covers_taken: Array = []
 var is_remote := false
 var weapon_id := ""          # z góry wybrana broń / wygląd (host przekazuje je gościowi)
 var tint_i := -1
+var vehicle = null           # bot-pilot: samolot / śmigłowiec, w którym siedzi
 var _net_pos := Vector3.ZERO
 var _net_vel := Vector3.ZERO
 
@@ -110,9 +111,12 @@ static func roll_weapon() -> String:
 
 func _physics_process(dt: float) -> void:
 	if is_remote:
-		_puppet_follow(dt)
+		if vehicle == null:
+			_puppet_follow(dt)
 		return
 	_tick_vitals(dt)
+	if vehicle != null:
+		return   # leci: sterowanie daje bot_pilot.gd w maszynie
 	if down:
 		if not vitals.dead:
 			_groan_t -= dt
@@ -562,11 +566,51 @@ func _collapse(dir: Vector3, at: Vector3, seg: String, energy: float, instant: b
 		return
 	_release_cover()
 	deaths += 1
+	if vehicle != null and is_instance_valid(vehicle):
+		var v = vehicle
+		leave_vehicle(false)
+		v.pilot_gone(self)
 	if net_host and not is_remote and get_parent().has_method("bot_down"):
 		get_parent().bot_down(self, dir, at, seg, energy, instant)
 	super._collapse(dir, at, seg, energy, instant)
 	if not is_remote:
 		_alert_friends(20.0)
+
+
+# ---------------------------------------------------------------- bot-pilot
+
+func enter_vehicle(v) -> void:
+	vehicle = v
+	collision_layer = 0
+	collision_mask = 0
+	velocity = Vector3.ZERO
+	reloading = -1.0
+	if gun:
+		gun.visible = false
+
+
+func leave_vehicle(place: bool) -> void:
+	var v = vehicle
+	vehicle = null
+	if not is_remote:
+		collision_layer = 4
+		collision_mask = 1 | 2 | 4
+	if gun:
+		gun.visible = true
+	if place and v != null and is_instance_valid(v):
+		global_position = v.exit_point()
+	visual.rotation = Vector3(0, visual.rotation.y, 0)
+
+
+## Zginął w rozbitej maszynie.
+func vehicle_death() -> void:
+	vitals.cause = "katastrofa lotnicza"
+	vitals._die()
+	_collapse(Vector3.UP, chest_pos(), "torso", 4000.0, true)
+
+
+func is_pilot() -> bool:
+	return vehicle != null
 
 
 ## Cel: najbliższy żywy gracz (solo: gracz; PvP u hosta: także kukiełka gościa). Obecny cel
