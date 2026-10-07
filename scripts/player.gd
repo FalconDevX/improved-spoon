@@ -68,7 +68,7 @@ func _ready() -> void:
 	if is_remote:
 		# przeciwnik w PvP: tylko odtwarza stan przysyłany z jego komputera
 		add_to_group("net_player")
-		collision_layer = 4
+		collision_layer = 0   # bez kolizji z moim żołnierzem: przy opóźnieniu sieci nie da się w nim utknąć
 		collision_mask = 0
 		build_soldier(Color(0.72, 0.36, 0.3), soldier_look())  # przeciwnik: czerwonobrązowy
 	else:

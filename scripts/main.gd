@@ -526,8 +526,9 @@ func _on_lobby_joined(_n: String) -> void:
 	_close_menu()
 	_spawn_planes()
 	var me: int = gd.get_client_id()
-	var host_side: bool = gd.is_host()
-	var p := _make_net_player(me, false, _pvp_spawn(_level.posts[11] if host_side else _level.posts[9]))
+	# kto założył grę (nie gd.is_host(): online host jest wyznaczany dopiero po wejściu do lobby,
+	# więc obaj dostawali to samo miejsce i stali w sobie)
+	var p := _make_net_player(me, false, _pvp_spawn(_level.posts[11] if _pvp_host else _level.posts[9]))
 	_player = p
 	_make_hud(p)
 	_hud.pvp = true
