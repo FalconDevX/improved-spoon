@@ -10,3 +10,9 @@ addons/GD-Sync/keys.cfg
 
 # zrzuty i skrypty testowe
 _tmp/
+
+# silnik Godota (lezy obok start.bat, za duzy na GitHuba)
+*.exe
+
+# wyeksportowana gra (zawiera klucze API)
+build/
