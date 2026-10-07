@@ -171,9 +171,11 @@ func _fix_materials(mesh: Mesh) -> void:
 			var m := StandardMaterial3D.new()
 			var c := src.albedo_color.linear_to_srgb()
 			var wood := c.r > c.b * 1.4 and c.r > 0.15
-			m.albedo_color = c.lerp(Color(c.r, c.g, c.b) * 1.25, 0.5) if wood else c
-			m.metallic = 0.0 if wood else 0.55
-			m.roughness = 0.65 if wood else 0.42
+			# stal oksydowana: ciemnoszara, półmatowa (bez niebieskiego odblasku nieba)
+			m.albedo_color = c.lerp(Color(c.r, c.g, c.b) * 1.25, 0.5) if wood else c.lerp(Color(0.16, 0.16, 0.15), 0.35)
+			m.metallic = 0.0 if wood else 0.3
+			m.roughness = 0.65 if wood else 0.55
+			m.metallic_specular = 0.4
 			_mat_cache[key] = m
 		mesh_node.set_surface_override_material(i, _mat_cache[key])
 
@@ -281,6 +283,18 @@ func finish_reload() -> bool:
 
 
 ## Zabiera naboje z innej broni tego samego kalibru (podnoszenie amunicji).
+## Pełny zapas (skrzynka z amunicją). Zwraca liczbę dodanych naboi.
+func refill() -> int:
+	var before := total_ammo()
+	if data["feed"] == "mag":
+		mags = []
+		for i in int(data["mags"]) - 1:
+			mags.append(int(data["cap"]))
+	else:
+		mags = [int(data["mags"])]
+	return maxi(total_ammo() - before, 0)
+
+
 func take_ammo_from(other) -> int:
 	if other == null or other.data["cal"] != data["cal"]:
 		return 0

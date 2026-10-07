@@ -44,6 +44,31 @@ const ORGANS := {
 	"eye": {"name": "Oko / oczodół", "bleed": 1.0, "clot": 120.0, "pain": 0.9},
 	"jaw": {"name": "Żuchwa (złamanie)", "bleed": 2.0, "clot": 120.0, "pain": 0.9},
 }
+## Trafienie krytyczne: zabija, odcina przytomność, duży krwotok (≥ 7 mL/s: serce, aorta, płuco,
+## wątroba, śledziona, nerka, duże tętnice), paraliż, oddech.
+## Mięśnie, kości kończyn, drobne naczynia — lekkie.
+static func critical_organ(o: String) -> bool:
+	var k := organ_key(o)
+	if not ORGANS.has(k):
+		return false
+	var fx: Dictionary = ORGANS[k]
+	return fx.get("kill", false) or fx.has("ko") or float(fx.get("bleed", 0.0)) >= 7.0 \
+		or fx.get("legs", "") == "both" or fx.has("breath")
+
+
+static func organ_key(o: String) -> String:
+	if o.begins_with("lung"):
+		return "lung"
+	if o.begins_with("kidney"):
+		return "kidney"
+	return o
+
+
+static func organ_name(o: String) -> String:
+	var k := organ_key(o)
+	return String(ORGANS[k]["name"]) if ORGANS.has(k) else o
+
+
 const TISSUE_BLEED := {"torso": 1.2, "head": 1.5, "uarm": 0.6, "farm": 0.4, "thigh": 1.0, "shin": 0.6}
 
 var blood := BLOOD

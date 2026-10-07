@@ -58,7 +58,9 @@ func _draw() -> void:
 	if pvp:
 		_draw_pvp(font, vs)
 	else:
-		draw_string(font, Vector2(vs.x - 230, 34), "Wyeliminowani: %d" % Npc.deaths, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.9, 0.95, 1.0, 0.9))
+		_panel(Rect2(vs.x - 250, 12, 234, 58))
+		draw_string(font, Vector2(vs.x - 232, 36), "WYELIMINOWANI", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.8, 0.82, 0.8, 0.8))
+		draw_string(font, Vector2(vs.x - 120, 38), "%d" % Npc.deaths, HORIZONTAL_ALIGNMENT_RIGHT, 90, 24, Color(1, 1, 1, 0.95))
 		if player.down:
 			_center_text(font, "WYELIMINOWANY (%s) — F5: od nowa" % ("nie żyjesz" if player.vitals.dead else "nieprzytomny"),
 				Vector2(vs.x * 0.5, vs.y * 0.5 - 40), 26, Color(1, 0.4, 0.3))
@@ -187,29 +189,56 @@ func _bar(at: Vector2, w: float, frac: float, col: Color, label: String, font: F
 	draw_string(font, at + Vector2(w + 10, 9), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.9, 0.93, 1, 0.8))
 
 
+## Ciemny panel ze skośną krawędzią i bursztynowym akcentem u góry (wspólny styl HUD-u).
+func _panel(r: Rect2, slant := 16.0) -> void:
+	var pts := PackedVector2Array([r.position + Vector2(slant, 0), r.position + Vector2(r.size.x, 0), r.end, Vector2(r.position.x, r.end.y)])
+	draw_colored_polygon(pts, Color(0.02, 0.03, 0.03, 0.5))
+	draw_line(r.position + Vector2(slant, 0), r.position + Vector2(r.size.x, 0), Color(1, 0.85, 0.4, 0.7), 2.0)
+
+
+## Stan żołnierza: krew (segmenty), kondycja, oddech, opatrunki, krwawienie, rany.
 func _draw_vitals(font: Font, vs: Vector2) -> void:
 	var v = player.vitals
-	var x := 24.0
-	var y := vs.y - 120
-	draw_rect(Rect2(x - 12, y - 26, 330, 118), Color(0, 0, 0, 0.35))
-	var blood: float = v.blood / Vitals.BLOOD
-	var bcol := Color(0.85, 0.15, 0.12) if blood > 0.75 else Color(1.0, 0.3, 0.1)
-	_bar(Vector2(x, y), 200, blood, bcol, "krew %d%%" % int(blood * 100.0), font)
-	_bar(Vector2(x, y + 20), 200, player.stamina / 100.0, Color(0.92, 0.85, 0.55), "kondycja", font)
-	if player.ads > 0.3 or player.breath < 6.0:
-		_bar(Vector2(x, y + 40), 200, player.breath / 6.0, Color(0.55, 0.8, 1.0), "oddech", font)
+	var x := 26.0
+	var y := vs.y - 104
+	_panel(Rect2(x - 10, y - 26, 330, 112))
+	var blood: float = clampf(v.blood / Vitals.BLOOD, 0.0, 1.0)
 	var r: float = v.bleed_rate()
-	var t := "opatrunki: %d [H]" % player.bandages
-	if r > 0.05:
-		t = "KRWAWIENIE %.1f ml/s   " % r + t
+	var pulse := 0.65 + 0.35 * sin(Time.get_ticks_msec() * 0.012)
+	# krew w mililitrach, na czerwono (przy dużej utracie pulsuje)
+	var red := Color(0.9, 0.12, 0.1) if blood > 0.7 else Color(1.0, 0.2, 0.15, pulse)
+	draw_string(font, Vector2(x + 8, y - 4), "KREW", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.95, 0.35, 0.3, 0.9))
+	draw_string(font, Vector2(x + 140, y - 2), "%d ml" % int(v.blood), HORIZONTAL_ALIGNMENT_RIGHT, 160, 22, red)
+	# 12 segmentów krwi
+	var segs := 12
+	var sw := 290.0 / segs
+	for k in segs:
+		var f := clampf(blood * segs - k, 0.0, 1.0)
+		var rr := Rect2(x + 8 + k * sw, y + 6, sw - 3, 12)
+		draw_rect(rr, Color(0.35, 0.02, 0.02, 0.45))
+		if f > 0.0:
+			draw_rect(Rect2(rr.position, Vector2(rr.size.x * f, rr.size.y)), red)
+	# kondycja i oddech: cienkie paski
+	draw_rect(Rect2(x + 8, y + 26, 290, 4), Color(1, 1, 1, 0.1))
+	draw_rect(Rect2(x + 8, y + 26, 290 * player.stamina / 100.0, 4), Color(0.95, 0.82, 0.45, 0.9))
+	if player.ads > 0.3 or player.breath < 6.0:
+		draw_rect(Rect2(x + 8, y + 34, 290, 4), Color(1, 1, 1, 0.1))
+		draw_rect(Rect2(x + 8, y + 34, 290 * player.breath / 6.0, 4), Color(0.55, 0.8, 1.0, 0.9))
+	var t := "OPATRUNKI  %d   [H]" % player.bandages
+	var tc := Color(0.85, 0.9, 0.88, 0.8)
 	if player.bandaging >= 0.0:
-		t = "zakładanie opatrunku... %d%%" % int(player.bandaging / 3.0 * 100.0)
-	draw_string(font, Vector2(x, y - 8), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 0.55, 0.45) if r > 0.05 else Color(0.85, 0.9, 1, 0.8))
+		t = "ZAKŁADANIE OPATRUNKU  %d%%" % int(player.bandaging / 3.0 * 100.0)
+		tc = Color(0.7, 1.0, 0.7)
+	elif r > 0.05:
+		t = "KRWAWIENIE  %.1f ml/s   —   H" % r
+		tc = Color(1, 0.35, 0.25, pulse)
+	draw_string(font, Vector2(x + 8, y + 60), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, tc)
+	# rany nad panelem
 	var lines := PackedStringArray()
 	for w: Dictionary in v.wounds:
-		lines.append(("✓ " if w["dressed"] else "• ") + String(w["name"]))
+		lines.append(("✓ " if w["dressed"] else "● ") + String(w["name"]))
 	for i in mini(lines.size(), 3):
-		draw_string(font, Vector2(x, y + 62 + i * 15), lines[lines.size() - 1 - i], HORIZONTAL_ALIGNMENT_LEFT, 300, 12, Color(1, 0.7, 0.6, 0.85))
+		draw_string(font, Vector2(x, y - 36 - i * 18), lines[lines.size() - 1 - i], HORIZONTAL_ALIGNMENT_LEFT, 320, 14, Color(1, 0.62, 0.5, 0.9))
 
 
 ## Nad trafionymi wrogami: ostatnia rana; w rentgenie pełna karta obrażeń.
@@ -227,9 +256,6 @@ func _draw_enemies(font: Font) -> void:
 		if cam.is_position_behind(wp):
 			continue
 		var sp := cam.unproject_position(wp)
-		var since: float = now - n.last_injury_time
-		if since < 2.5 and not xray:
-			_center_text(font, n.last_injury, sp - Vector2(0, 14 + since * 12.0), 15, Color(1.0, 0.55, 0.35, clampf(2.5 - since, 0.0, 1.0)))
 		if xray and not n.injuries.is_empty():
 			_card(font, n, sp)
 
@@ -282,6 +308,13 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 	for pl in get_tree().get_nodes_in_group("plane"):
 		if pl.can_board(player):
 			_center_text(font, "[E] — wsiądź do samolotu", Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
+			return
+	for c in get_tree().get_nodes_in_group("ammo_crate"):
+		if c.near(player):
+			if c.is_ready():
+				_center_text(font, "[E] — uzupełnij amunicję", Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(1.0, 0.88, 0.45))
+			else:
+				_center_text(font, "Skrzynka pusta — %d s" % ceili(c.cooldown), Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 16, Color(0.75, 0.75, 0.75))
 			return
 
 
@@ -404,7 +437,7 @@ func _draw_air_targets(font: Font, cam: Camera3D, pl) -> void:
 
 # ---------------------------------------------------------------- trafienia i zabójstwa (styl Battlefront II)
 
-const HIT_COLORS := [Color(1, 1, 1), Color(1.0, 0.82, 0.2), Color(1.0, 0.16, 0.12)]
+const HIT_COLORS := [Color(1, 1, 1), Color(1.0, 0.24, 0.16), Color(0.95, 0.06, 0.05)]  # lekkie, krytyczne, eliminacja
 
 
 ## Znacznik trafienia: cztery skośne kreski; biały / żółty / czerwony (eliminacja — większy,
@@ -439,9 +472,31 @@ func _skull(p: Vector2, s: float, col: Color) -> void:
 		draw_line(p + Vector2(x, s * 0.36), p + Vector2(x, s * 0.53), dark, maxf(s * 0.05, 1.0))
 
 
+## Napisy przy ranach: krytyczne czerwone (większe), lekkie białe, pancerz szary; unoszą się i gasną.
+func _draw_hit_popups(font: Font, cam: Camera3D) -> void:
+	for pp: Dictionary in player.hit_popups:
+		var wp: Vector3 = pp["pos"]
+		if cam.is_position_behind(wp):
+			continue
+		var t: float = 1.3 - float(pp["t"])
+		var a := clampf(float(pp["t"]) / 0.4, 0.0, 1.0)
+		var sp := cam.unproject_position(wp) + (pp["off"] as Vector2) - Vector2(0, 18.0 + t * 26.0)
+		var crit: bool = pp["crit"]
+		var col := Color(1.0, 0.22, 0.14, a) if crit else Color(1, 1, 1, a * 0.9)
+		if pp["armor"]:
+			col = Color(0.75, 0.78, 0.82, a * 0.85)
+		var size := 22 if pp["head"] else (18 if crit else 14)
+		var pop := 1.0 + 0.35 * maxf(0.0, 1.0 - t / 0.12)
+		size = int(size * pop)
+		draw_string(font, sp + Vector2(1.5, 1.5), pp["text"], HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(0, 0, 0, a * 0.7))
+		draw_string(font, sp, pp["text"], HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+
+
 func _draw_kills(font: Font, vs: Vector2) -> void:
 	var cam := get_viewport().get_camera_3d()
 	var red := Color(1.0, 0.16, 0.12)
+	if cam:
+		_draw_hit_popups(font, cam)
 	# czaszki nad zabitymi: wyskakują, unoszą się i gasną
 	if cam:
 		for m: Dictionary in player.kill_marks:

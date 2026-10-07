@@ -135,7 +135,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		vehicle.pilot_input(e)
 		return
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var k := MOUSE_SENS * lerpf(1.0, _cam.fov / 70.0, ads)
+		var k := MOUSE_SENS * Settings.sens * lerpf(1.0, _cam.fov / Settings.fov, ads)
 		_yaw -= e.relative.x * k
 		_pitch = clampf(_pitch - e.relative.y * k, -1.35, 1.25)
 		return
@@ -230,6 +230,16 @@ func _start_bandage() -> void:
 
 
 func _loot() -> void:
+	for c in get_tree().get_nodes_in_group("ammo_crate"):
+		if c.near(self):
+			var r: String = c.resupply(self)
+			if r != "":
+				FX.I.play("mag_in", global_position + Vector3(0, 1.0, 0), -4.0)
+				FX.I.play("bolt", global_position + Vector3(0, 1.0, 0), -8.0, 0.05, 1.2)
+				_msg(r)
+			else:
+				_msg("Skrzynka pusta — odnowi się za %d s" % ceili(c.cooldown))
+			return
 	var got := 0
 	for rb in get_tree().get_nodes_in_group("dropped_gun"):
 		if not is_instance_valid(rb) or (rb as Node3D).global_position.distance_to(global_position) > 2.5:
@@ -440,9 +450,9 @@ func _place_camera(rd: float) -> void:
 	_cam.h_offset = _noise.get_noise_2d(Time.get_ticks_msec() * 0.05, 3.0) * 0.05 * shake
 	_cam.v_offset = _noise.get_noise_2d(7.0, Time.get_ticks_msec() * 0.05) * 0.05 * shake
 	var fov_ads: float = gun.data["ads_fov"] if gun else 50.0
-	var f := lerpf(70.0, fov_ads, ads)
+	var f := lerpf(Settings.fov, fov_ads, ads)
 	if gun and gun.data.get("scope", false):
-		f = 70.0 if ads < 0.9 else fov_ads
+		f = Settings.fov if ads < 0.9 else fov_ads
 	_cam.fov = f
 
 
@@ -537,11 +547,13 @@ func near_miss(pos: Vector3, dist: float, spd: float, _shooter) -> void:
 
 
 # ---------------------------------------------------------------- znaczniki trafień i zabójstw
-# Jak w Battlefront II: znacznik trafienia biały (zwykłe), żółty (groźne: narząd, głowa),
-# czerwony (eliminacja); nad zabitym czerwona czaszka, na środku „ELIMINACJA +100”, lista zabójstw.
+# Jak w Battlefront II: znacznik trafienia biały (lekkie: mięśnie, kończyny), czerwony (krytyczne:
+# narząd życiowy, głowa), duży czerwony (eliminacja). Przy ranie napis (czerwony / biały), osobny
+# dźwięk headshota tylko gdy kula przebiła głowę. Nad zabitym czaszka, „ELIMINACJA +100”, lista.
 
 const KILL_MARK_TIME := 3.5
-var hit_kind := 0             # 0 biały, 1 żółty, 2 czerwony
+var hit_kind := 0             # 0 biały (lekkie), 1 czerwony (krytyczne), 2 eliminacja
+var hit_popups: Array = []    # {pos, text, crit, head, t} napisy przy ranach
 var score := 0
 var kill_marks: Array = []    # {node, pos, t, head}
 var kill_feed: Array = []     # {text, t}
@@ -551,14 +563,29 @@ var _streak := 0
 var _streak_t := 0.0
 
 
-func on_hit_confirmed(_target, strength: int) -> void:
+func on_hit_confirmed(target, info) -> void:
 	if is_remote:
 		return
+	if info is int:   # samolot (plane.gd przez confirm_hit)
+		info = {"crit": info > 0, "head": false, "armor": false, "text": "", "pos": (target as Node3D).global_position}
+	var crit: bool = info["crit"]
+	var k := 1 if crit else 0
 	if hit_marker < 0.35 or hit_kind < 2:
-		hit_kind = maxi(strength, hit_kind if hit_marker > 0.35 else 0)
+		hit_kind = maxi(k, hit_kind if hit_marker > 0.35 else 0)
 	hit_marker = 1.0
 	hit_kill = false
-	FX.I.play("click", global_position + Vector3(0, 1.6, 0), -6.0 if strength == 0 else -2.0, 0.05, 2.2 if strength == 0 else 1.6, 30.0)
+	var ear := global_position + Vector3(0, 1.6, 0)
+	if info["head"]:
+		FX.I.play("impact_metal", ear, -1.0, 0.03, 2.3, 30.0)    # „ding” — tylko prawdziwy headshot
+	elif crit:
+		FX.I.play("click", ear, -3.0, 0.05, 1.3, 30.0)
+	else:
+		FX.I.play("click", ear, -9.0, 0.05, 2.4, 30.0)
+	if String(info["text"]) != "":
+		hit_popups.append({"pos": info["pos"], "text": info["text"], "crit": crit, "head": info["head"],
+			"armor": info["armor"], "t": 1.3, "off": Vector2(randf_range(44, 60), randf_range(-8, 8))})
+		if hit_popups.size() > 8:
+			hit_popups.pop_front()
 
 
 ## Zgodność ze starszym API (plane.gd): trafienie celu bez ciała (samolot); zniszczenie = eliminacja.
@@ -582,6 +609,7 @@ func on_kill(target) -> void:
 	hit_kind = 2
 	hit_kill = true
 	var head: bool = target.last_hit_seg == "head"
+	FX.I.play("impact_metal", global_position + Vector3(0, 1.6, 0), -3.0, 0.0, 0.9, 30.0)
 	var pts := 100 + (50 if head else 0)
 	_streak = _streak + 1 if _streak_t > 0.0 else 1
 	_streak_t = 6.0
@@ -600,11 +628,14 @@ func on_kill(target) -> void:
 	kill_feed.push_front({"text": "Ty  [%s]%s  %s" % [gun.data["name"] if gun else "?", "  ☠" if head else "", who], "t": 6.0})
 	if kill_feed.size() > 5:
 		kill_feed.pop_back()
-	FX.I.play("impact_metal", global_position + Vector3(0, 1.6, 0), -4.0, 0.0, 1.5, 30.0)
 
 
 func _tick_kills(dt: float) -> void:
 	kill_banner_t = maxf(kill_banner_t - dt, 0.0)
+	for i in range(hit_popups.size() - 1, -1, -1):
+		hit_popups[i]["t"] = float(hit_popups[i]["t"]) - dt
+		if float(hit_popups[i]["t"]) <= 0.0:
+			hit_popups.remove_at(i)
 	_streak_t = maxf(_streak_t - dt, 0.0)
 	for i in range(kill_marks.size() - 1, -1, -1):
 		var m: Dictionary = kill_marks[i]
@@ -693,8 +724,9 @@ func _net_forward_hit(h: Dictionary) -> void:
 		FX.I.play("hit", h["entry"], -4.0, 0.15)
 	rig.hit_react(visual.global_basis.inverse() * dir, h["seg"], 0.8)
 	last_hit_time = Time.get_ticks_msec() / 1000.0
-	last_hit_seg = h["seg"]
-	sh.on_hit_confirmed(self, 1 if (h["seg"] == "head" or not (h.get("organs", []) as Array).is_empty()) else 0)
+	if h.get("armor", "") == "":
+		last_hit_seg = h["seg"]
+	sh.on_hit_confirmed(self, hit_info(h))
 
 
 # --- wywoływane zdalnie

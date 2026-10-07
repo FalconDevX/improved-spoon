@@ -1,5 +1,5 @@
 @echo off
-rem Uruchamia gre Blueprint Blade.
+rem Uruchamia gre Black Meridian.
 rem   start.bat         - gra
 rem   start.bat edytor  - otwiera projekt w edytorze Godota
 

@@ -34,9 +34,9 @@ void fragment() {
 	vec4 t = texture(blades, UV);
 	if (t.a < 0.45) discard;
 	float big = n2(wp.xz * 0.03) * 0.6 + n2(wp.xz * 0.11) * 0.4;
-	vec3 grass = mix(vec3(0.2, 0.28, 0.1), vec3(0.36, 0.4, 0.16), big);
-	grass = mix(grass, vec3(0.46, 0.42, 0.22), smoothstep(0.6, 0.8, n2(wp.xz * 0.5 + 7.0)) * 0.5);
-	vec3 c = grass * (0.55 + 0.6 * tipk) * (0.8 + 0.4 * t.r);
+	vec3 grass = mix(vec3(0.15, 0.21, 0.08), vec3(0.29, 0.33, 0.13), big);
+	grass = mix(grass, vec3(0.42, 0.38, 0.2), smoothstep(0.6, 0.8, n2(wp.xz * 0.5 + 7.0)) * 0.55);
+	vec3 c = grass * (0.5 + 0.42 * tipk) * (0.8 + 0.35 * t.r);
 	// zanikanie z odległością (bez nagłego znikania sektorów)
 	float d = length(CAMERA_POSITION_WORLD - wp);
 	if (h(floor(FRAGCOORD.xy)) > 1.0 - smoothstep(60.0, 72.0, d)) discard;

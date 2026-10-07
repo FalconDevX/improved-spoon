@@ -11,7 +11,10 @@ const WALL_T := 0.25
 
 var covers: Array = []            # {pos, normal, h}
 var roofs: Array = []             # {mesh, aabb}
-var spawn_player := Vector3(-8, 0, 104)
+var spawn_player := Vector3(25, 0, 4.5)   # lotnisko, między myśliwcami
+# skrzynki z amunicją: lotnisko, wieś, kompleks, farma, sad, pola i drogi na północy i południu
+var ammo_spots := [Vector3(20, 0, 10), Vector3(-10, 0, -2), Vector3(-30, 0, -40), Vector3(60, 0, -30),
+	Vector3(-62, 0, 34), Vector3(-70, 0, -52), Vector3(-6, 0, 70), Vector3(40, 0, 60), Vector3(-8, 0, -95)]
 var posts: Array = []             # miejsca, w których startują oddziały wroga
 var road_img: Image              # maska dróg 256 × 256 na całą mapę (trawa, minimapa)
 var ground_body: StaticBody3D
@@ -147,13 +150,17 @@ void fragment() {
 	float big = n2(p * 0.03) * 0.6 + n2(p * 0.11) * 0.4;
 	float fine = n2(p * 1.7) * 0.5 + n2(p * 7.0) * 0.3 + n2(p * 31.0) * 0.2;
 	float blades = n2(p * vec2(140.0, 35.0)) * n2(p * vec2(37.0, 150.0));
-	vec3 grass = mix(vec3(0.22, 0.29, 0.12), vec3(0.36, 0.39, 0.17), big);
-	grass *= 0.75 + 0.35 * fine + 0.35 * blades;
-	grass = mix(grass, vec3(0.42, 0.4, 0.22), smoothstep(0.6, 0.8, n2(p * 0.5 + 7.0)) * 0.4);  // suche kępy
+	vec3 grass = mix(vec3(0.16, 0.22, 0.09), vec3(0.29, 0.32, 0.14), big);
+	grass *= 0.72 + 0.32 * fine + 0.3 * blades;
+	grass = mix(grass, vec3(0.38, 0.35, 0.2), smoothstep(0.6, 0.8, n2(p * 0.5 + 7.0)) * 0.45);  // suche kępy
+	grass = mix(grass, vec3(0.2, 0.2, 0.08), smoothstep(0.55, 0.8, n2(p * 0.9 + 31.0)) * 0.3);   // ciemniejsze, wilgotne płaty
 	vec3 dirt = mix(vec3(0.34, 0.28, 0.2), vec3(0.46, 0.39, 0.28), fine);
 	dirt *= 0.85 + 0.3 * n2(p * 45.0);
 	float patchy = smoothstep(0.55, 0.75, n2(p * 0.07 + 13.0) + fine * 0.15);
 	vec3 c = mix(grass, dirt, patchy);
+	// kamyki rozsiane po trawie i ziemi
+	float stone = smoothstep(0.86, 0.9, n2(p * 4.3 + 3.0)) * smoothstep(0.4, 0.7, n2(p * 0.6));
+	c = mix(c, vec3(0.45, 0.43, 0.4) * (0.8 + 0.3 * n2(p * 30.0)), stone * 0.8);
 	vec2 uv = (p + half_size) / (2.0 * half_size);
 	float road = texture(road_mask, uv).r;
 	road *= step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);   // poza mapą bez dróg

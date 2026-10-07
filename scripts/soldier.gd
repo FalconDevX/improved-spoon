@@ -232,9 +232,10 @@ func bullet_hit(h: Dictionary) -> void:
 	var sh = h.get("shooter")
 	if sh != null and is_instance_valid(sh) and sh != self:
 		last_shooter = sh
-		last_hit_seg = seg
+		if h.get("armor", "") == "":
+			last_hit_seg = seg
 	if h.get("armor", "") != "":
-		_confirm(sh, 0)
+		_confirm(sh, hit_info(h))
 		vitals.blunt(clampf(energy / 500.0, 0.2, 1.0))
 		_note("%s zatrzymał%s pocisk" % [String(h["armor"]).capitalize(), "a" if h["armor"] == "kamizelka" else ""], [])
 		if not down:
@@ -273,8 +274,7 @@ func bullet_hit(h: Dictionary) -> void:
 		_on_hit(h, res)
 		return
 	rig.hit_react(visual.global_basis.inverse() * dir, seg, clampf(energy / 1500.0, 0.3, 1.6))
-	# trafienie: zwykłe (biały znacznik) albo groźne — narząd / głowa (żółty)
-	_confirm(sh, 1 if (seg == "head" or not names.is_empty()) else 0)
+	_confirm(sh, hit_info(h))
 	if res.get("arm", false):
 		rig.limp_arm = vitals.arms.duplicate()
 	if res["kill"]:
@@ -312,9 +312,38 @@ var last_shooter = null
 var last_hit_seg := ""
 
 
-func _confirm(sh, strength: int) -> void:
+func _confirm(sh, info: Dictionary) -> void:
 	if sh != null and is_instance_valid(sh) and sh != self and sh.has_method("on_hit_confirmed"):
-		sh.on_hit_confirmed(self, strength)
+		sh.on_hit_confirmed(self, info)
+
+
+## Opis trafienia dla strzelca: headshot (kula przebiła głowę), krytyczne (narząd życiowy)
+## albo lekkie; napis przy ranie.
+static func hit_info(h: Dictionary) -> Dictionary:
+	var seg: String = h["seg"]
+	var armor: String = h.get("armor", "")
+	var info := {"pos": h["entry"], "head": false, "crit": false, "armor": armor != "", "text": ""}
+	if armor != "":
+		info["text"] = armor.to_upper()
+		return info
+	info["head"] = seg == "head" and not (h.get("organs", []) as Array).is_empty()
+	var crit := PackedStringArray()
+	var light := PackedStringArray()
+	for o: String in h.get("organs", []):
+		if Vitals.critical_organ(o):
+			crit.append(Vitals.organ_name(o))
+		elif not light.has(Vitals.organ_name(o)):
+			light.append(Vitals.organ_name(o))
+	info["crit"] = info["head"] or not crit.is_empty()
+	if info["head"]:
+		info["text"] = "GŁOWA"
+	elif not crit.is_empty():
+		info["text"] = crit[0].get_slice(" (", 0).to_upper()
+	elif not light.is_empty():
+		info["text"] = light[0].get_slice(" (", 0)
+	else:
+		info["text"] = _seg_pl(seg)
+	return info
 
 
 ## Utrata przytomności / śmierć: ciało staje się ragdollem, broń wypada z rąk.

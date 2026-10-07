@@ -11,10 +11,13 @@ const Ballistics = preload("res://scripts/ballistics.gd")
 const Hud = preload("res://scripts/hud.gd")
 const Level = preload("res://scripts/level.gd")
 const Aircraft = preload("res://scripts/plane.gd")
+const AmmoCrate = preload("res://scripts/ammo_crate.gd")
 const Clouds = preload("res://scripts/clouds.gd")
 const Grass = preload("res://scripts/grass.gd")
 const Post = preload("res://scripts/post.gd")
 const Minimap = preload("res://scripts/minimap.gd")
+const Menu = preload("res://scripts/menu.gd")
+const UiTheme = preload("res://scripts/ui_theme.gd")
 const PLANE_PAINT := [Color(0.33, 0.38, 0.25), Color(0.36, 0.4, 0.44), Color(0.55, 0.47, 0.33)]
 
 const MAX_NPC := 32
@@ -42,6 +45,13 @@ func _ready() -> void:
 	_level.name = "Level"
 	add_child(_level)
 	_level.build()
+	if _level.is_ready():
+		_spawn_crates()
+	else:
+		_level.ready_nav.connect(_spawn_crates, CONNECT_ONE_SHOT)
+	var post := Post.new()
+	post.main = self
+	add_child(post)
 	var clouds := Clouds.new()
 	clouds.name = "Clouds"
 	add_child(clouds)
@@ -69,9 +79,15 @@ func _plant_grass() -> void:
 	g.name = "Grass"
 	add_child(g)
 	g.build(_level)
+	_apply_settings()
 
 
 func _process(_dt: float) -> void:
+	if _menu_cam:
+		# kamera menu krąży nad mapą (lotnisko, wieś)
+		_menu_a += _dt * 0.035
+		_menu_cam.global_position = Vector3(cos(_menu_a) * 120.0 + 20.0, 38.0 + sin(_menu_a * 2.0) * 6.0, sin(_menu_a) * 120.0)
+		_menu_cam.look_at(Vector3(20, 6, 0))
 	if is_instance_valid(_player):
 		var cam := get_viewport().get_camera_3d()
 		_level.update_roofs(_player.global_position, cam.global_position if cam else _player.global_position)
@@ -93,7 +109,7 @@ func _start_solo() -> void:
 	var player := Player.new()
 	player.name = "Player"
 	player.position = _level.spawn_player
-	player.rotation.y = 0.0  # na północ (-Z), w stronę wsi
+	player.rotation.y = -PI * 0.5  # na wschód: twarzą do samolotów
 	add_child(player)
 	_player = player
 	_spawn_planes()
@@ -109,7 +125,7 @@ func _start_solo() -> void:
 func _spawn_squads() -> void:
 	var n := 0
 	for post: Vector3 in _level.posts:
-		if post.distance_to(_level.spawn_player) < 45.0:
+		if post.distance_to(_level.spawn_player) < 25.0:
 			continue
 		for i in _rng.randi_range(1, 3):
 			if n >= MAX_NPC:
@@ -123,10 +139,26 @@ func _spawn_squads() -> void:
 			n += 1
 
 
+## Skrzynki z amunicją (na siatce nawigacyjnej, żeby nie stały w ścianie; te same miejsca u obu graczy).
+func _spawn_crates() -> void:
+	var map := get_world_3d().navigation_map
+	for i in _level.ammo_spots.size():
+		var want: Vector3 = _level.ammo_spots[i]
+		var p := NavigationServer3D.map_get_closest_point(map, want)
+		var c := AmmoCrate.new()
+		c.name = "AmmoCrate%d" % i
+		c.position = Vector3(p.x, 0.0, p.z)
+		c.rotation.y = float(i) * 0.7
+		add_child(c)
+
+
 # ======================================================== wspólne
 
 ## Myśliwce na lotnisku (te same nazwy węzłów u obu graczy — GD-Sync woła funkcje po ścieżce).
 func _spawn_planes() -> void:
+	for old in get_tree().get_nodes_in_group("plane"):   # z tła menu — PvP potrzebuje nowych (funkcje sieciowe)
+		remove_child(old)
+		old.queue_free()
 	for i in _level.plane_spots.size():
 		var pl := Aircraft.new()
 		pl.name = "Plane%d" % (i + 1)
@@ -139,19 +171,29 @@ func _make_hud(player: Node) -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var hud := Hud.new()
+	hud.theme = UiTheme.hud()
 	hud.player = player
 	layer.add_child(hud)
 	_hud = hud
 	var mm := Minimap.new()
+	mm.theme = UiTheme.hud()
 	mm.main = self
 	mm.level = _level
 	layer.add_child(mm)
-	var post := Post.new()
-	post.main = self
-	add_child(post)
+
 
 
 func _unhandled_input(e: InputEvent) -> void:
+	if e.is_action_pressed("grade"):
+		Settings.next_grade()
+		if is_instance_valid(_player):
+			_player._msg("Filtr kolorów: " + Settings.GRADES[Settings.grade])
+		get_viewport().set_input_as_handled()
+		return
+	if e.is_action_pressed("ui_cancel") and _menu == null and is_instance_valid(_player):
+		_open_pause()
+		get_viewport().set_input_as_handled()
+		return
 	if e.is_action_pressed("xray"):
 		_xray = not _xray
 		RenderingServer.global_shader_parameter_set("xray", 1.0 if _xray else 0.0)
@@ -182,6 +224,7 @@ func _setup_input() -> void:
 	_key("view_toggle", KEY_V)
 	_key("laser", KEY_L)
 	_key("help", KEY_F1)
+	_key("grade", KEY_F2)
 	_key("stick_up", KEY_UP)
 	_key("stick_down", KEY_DOWN)
 	_key("stick_left", KEY_LEFT)
@@ -254,6 +297,7 @@ void sky() {
 
 func _build_environment() -> void:
 	var env := Environment.new()
+	_env = env
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
 	var sm := ShaderMaterial.new()
@@ -292,6 +336,7 @@ func _build_environment() -> void:
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
+	_sun = sun
 	sun.rotation_degrees = Vector3(-42, -35, 0)
 	sun.light_energy = 1.7
 	sun.light_color = Color(1.0, 0.94, 0.85)
@@ -312,8 +357,6 @@ func _build_environment() -> void:
 # ======================================================== menu i PvP (GD-Sync)
 
 var _menu: CanvasLayer
-var _status: Label
-var _code_edit: LineEdit
 var _pvp_host := false
 var _pvp_code := ""
 var _join_tries := 0
@@ -323,61 +366,91 @@ var _corpses: Array = []
 var _corpse_n := 0
 
 
+var _menu_cam: Camera3D
+var _menu_a := 0.0
+var _env: Environment
+var _sun: DirectionalLight3D
+
+
 func _show_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_menu = CanvasLayer.new()
+	_menu_cam = Camera3D.new()
+	_menu_cam.fov = 60.0
+	_menu_cam.far = 2000.0
+	add_child(_menu_cam)
+	_menu_cam.current = true
+	_spawn_planes()      # myśliwce na lotnisku widać w tle menu
+	_menu = Menu.new()
+	_menu.code = "SN%04d" % _rng.randi_range(0, 9999)
+	_menu.solo.connect(_start_solo)
+	_menu.pvp.connect(_start_pvp)
 	add_child(_menu)
-	var bg := ColorRect.new()
-	bg.color = Color(0.03, 0.05, 0.04, 0.84)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_menu.add_child(bg)
-	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_CENTER)
-	box.custom_minimum_size = Vector2(420, 0)
-	box.position = Vector2(-210, -230)
-	box.add_theme_constant_override("separation", 10)
-	bg.add_child(box)
-	var title := Label.new()
-	title.text = "BLUEPRINT BLADE"
-	title.add_theme_font_size_override("font_size", 40)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(title)
-	box.add_child(_menu_button("Gra solo (boty)", _start_solo))
-	var lbl := Label.new()
-	lbl.text = "Kod gry (ten sam u obu graczy):"
-	box.add_child(lbl)
-	_code_edit = LineEdit.new()
-	_code_edit.text = "BB%04d" % _rng.randi_range(0, 9999)
-	_code_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(_code_edit)
-	box.add_child(_menu_button("Stwórz grę online (PvP 1 na 1)", func(): _start_pvp(true, true, _code_edit.text)))
-	box.add_child(_menu_button("Dołącz online", func(): _start_pvp(true, false, _code_edit.text)))
-	box.add_child(_menu_button("Stwórz grę w sieci lokalnej / na tym PC", func(): _start_pvp(false, true, _code_edit.text)))
-	box.add_child(_menu_button("Dołącz w sieci lokalnej / na tym PC", func(): _start_pvp(false, false, _code_edit.text)))
-	_status = Label.new()
-	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status.custom_minimum_size = Vector2(420, 60)
-	box.add_child(_status)
 
 
-func _menu_button(text: String, cb: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.custom_minimum_size = Vector2(420, 40)
-	b.pressed.connect(cb)
-	return b
+## Pauza (Esc): w solo zatrzymuje grę, w PvP gra toczy się dalej.
+func _open_pause() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_menu = Menu.new()
+	_menu.in_game = true
+	_menu.resume.connect(_close_pause)
+	_menu.to_menu.connect(_back_to_menu)
+	add_child(_menu)
+	if _hud:
+		_hud.get_parent().visible = false   # HUD i minimapa schowane pod menu pauzy
+	if not Player.net_on:
+		get_tree().paused = true
+
+
+func _close_pause() -> void:
+	get_tree().paused = false
+	if _hud:
+		_hud.get_parent().visible = true
+	_close_menu()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _back_to_menu() -> void:
+	get_tree().paused = false
+	var gd := get_node_or_null("/root/GDSync")
+	if Player.net_on and gd:
+		gd.lobby_leave()
+		gd.stop_multiplayer()
+	Player.net_on = false
+	get_tree().reload_current_scene()
 
 
 func _close_menu() -> void:
 	if _menu:
 		_menu.queue_free()
 		_menu = null
+	if _menu_cam:
+		_menu_cam.queue_free()
+		_menu_cam = null
+
+
+## Jakość grafiki z ustawień (wołane przy starcie i po każdej zmianie).
+func _apply_settings() -> void:
+	if not Settings.changed.is_connected(_apply_settings):
+		Settings.changed.connect(_apply_settings)
+	var q := Settings.quality
+	if _env:
+		_env.ssao_enabled = q >= 1
+		_env.ssil_enabled = q >= 2
+		_env.glow_enabled = true
+	if _sun:
+		_sun.directional_shadow_max_distance = [80.0, 120.0, 140.0][q]
+	RenderingServer.directional_shadow_atlas_set_size([2048, 4096, 4096][q], true)
+	get_viewport().msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X][q]
+	get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if q == 0 else Viewport.SCREEN_SPACE_AA_DISABLED
+	var g := get_node_or_null("Grass")
+	if g:
+		g.visible = q >= 1
 
 
 func _set_status(t: String) -> void:
 	print("[PvP] ", t)
-	if _status:
-		_status.text = t
+	if _menu:
+		_menu.set_status(t)
 	if _hud:
 		_hud.status = t
 

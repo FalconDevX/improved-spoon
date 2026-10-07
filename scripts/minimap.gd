@@ -88,6 +88,14 @@ func _draw_map() -> void:
 			continue
 		var q := o + Vector2(n.global_position.x, n.global_position.z)
 		v.draw_circle(q, 4.5 / _zoom, Color(1.0, 0.2, 0.15, 1.0 - age / SHOT_SHOW))
+	# skrzynki z amunicją: żółte (pełne) / szare (odnawiają się)
+	for cr in get_tree().get_nodes_in_group("ammo_crate"):
+		var q := o + Vector2(cr.global_position.x, cr.global_position.z)
+		var s2 := 4.5 / _zoom
+		var full: bool = cr.is_ready()
+		v.draw_rect(Rect2(q - Vector2(s2, s2), Vector2(s2, s2) * 2.0), Color(0, 0, 0, 0.7))
+		v.draw_rect(Rect2(q - Vector2(s2, s2) * 0.75, Vector2(s2, s2) * 1.5), Color(1.0, 0.82, 0.25) if full else Color(0.55, 0.55, 0.55))
+		v.draw_line(q - Vector2(0, s2 * 0.6), q + Vector2(0, s2 * 0.6), Color(0.15, 0.12, 0.05), 1.2 / _zoom)
 	# samoloty
 	for pl in get_tree().get_nodes_in_group("plane"):
 		if pl.destroyed or pl == p.get("vehicle"):

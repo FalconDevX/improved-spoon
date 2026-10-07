@@ -504,8 +504,8 @@ func _seat_pilot() -> void:
 
 func pilot_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_aim_yaw -= e.relative.x * MOUSE_SENS
-		_aim_pitch = clampf(_aim_pitch - e.relative.y * MOUSE_SENS, -1.45, 1.45)
+		_aim_yaw -= e.relative.x * MOUSE_SENS * Settings.sens
+		_aim_pitch = clampf(_aim_pitch - e.relative.y * MOUSE_SENS * Settings.sens, -1.45, 1.45)
 		return
 	if e.is_action_pressed("attack"):
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -1032,7 +1032,7 @@ func _place_camera(rd: float) -> void:
 			up = -global_basis.z
 		_cam.global_transform = Transform3D(Basis.looking_at(aim, up), eye)
 		_cam.cull_mask = 0xFFFFF & ~Player.OWN_LAYER
-		_cam.fov = lerpf(_cam.fov, 72.0 + clampf(spd / 80.0, 0.0, 1.0) * 6.0, 1.0 - exp(-2.0 * rd))
+		_cam.fov = lerpf(_cam.fov, Settings.fov + 2.0 + clampf(spd / 80.0, 0.0, 1.0) * 6.0, 1.0 - exp(-2.0 * rd))
 	else:
 		# kamera za samolotem: kierunek od razu za myszą, pozycja płynnie dogania
 		var tgt := global_position - aim * 15.0 + Vector3.UP * 3.2
@@ -1043,7 +1043,7 @@ func _place_camera(rd: float) -> void:
 			_cam.global_position = _cam.global_position.lerp(tgt, k)
 		_cam.global_basis = Basis.looking_at(global_position + aim * 60.0 - _cam.global_position, Vector3.UP)
 		_cam.cull_mask = 0xFFFFF
-		_cam.fov = lerpf(_cam.fov, 68.0 + clampf(spd / 80.0, 0.0, 1.0) * 8.0, 1.0 - exp(-2.0 * rd))
+		_cam.fov = lerpf(_cam.fov, Settings.fov - 2.0 + clampf(spd / 80.0, 0.0, 1.0) * 8.0, 1.0 - exp(-2.0 * rd))
 
 
 # ---------------------------------------------------------------- sieć (PvP, GD-Sync)
