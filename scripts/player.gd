@@ -11,7 +11,7 @@ const CROUCH := 1.4
 const ADS_SPEED := 1.5
 const ACCEL := 10.0
 const MOUSE_SENS := 0.0022
-const LOADOUT := ["m4", "ak", "aug", "mp9", "r870", "m24", "glock", "deagle", "ak74", "rpg", "uzi", "sawed", "awm", "m686"]
+const LOADOUT := ["m4", "ak", "aug", "mp9", "r870", "m24", "glock", "piorun", "ak74", "rpg", "uzi", "sawed", "awm", "m686"]
 const OWN_LAYER := 1 << 10    # warstwa obrazu własnego ciała (niewidoczna z pierwszej osoby; 2 = ciała dla decali krwi)
 
 var guns: Array = []
@@ -292,6 +292,7 @@ func _physics_process(dt: float) -> void:
 				_msg(r)
 	_movement(dt)
 	_fire_logic()
+	_tick_lock(dt)
 
 
 func _movement(dt: float) -> void:
@@ -695,7 +696,13 @@ func _on_fired(origin: Vector3, dir: Vector3, tracer: bool) -> void:
 		_vm.flash()
 		_vm_kick_v += 1.6 + float(gun.data["recoil"][0]) * 60.0
 	if net_on and not is_remote:
-		_gd().call_func(net_shot, origin, dir, tracer)
+		var tgt := ""
+		if _fired_target != null and is_instance_valid(_fired_target):
+			tgt = String(_fired_target.name)
+		_gd().call_func(net_shot, origin, dir, tracer, tgt)
+	_fired_target = null
+	if gun and gun.data.get("seeker", false):
+		lock_t = 0.0
 
 
 func _collapse(dir: Vector3, at: Vector3, seg: String, energy: float, instant: bool) -> void:
@@ -769,9 +776,10 @@ func net_state(p: Vector3, v: Vector3, vyaw: float, aim: Vector3, aim_w: float, 
 
 
 ## (kukiełka) przeciwnik strzelił: ten sam pocisk leci u mnie (trzask, rykoszety, smugi).
-func net_shot(origin: Vector3, dir: Vector3, tracer: bool) -> void:
+func net_shot(origin: Vector3, dir: Vector3, tracer: bool, tgt := "") -> void:
 	if not is_remote or down or gun == null:
 		return
+	_remote_lock = get_parent().get_node_or_null(tgt) if tgt != "" else null
 	fire_projectile(gun, origin, dir, tracer)
 	gun.flash()
 	_shot_fx(gun, origin, dir)
@@ -944,6 +952,81 @@ func _spawn_grenade(origin: Vector3, v: Vector3) -> void:
 	g.shooter = self
 	get_parent().add_child(g)
 	g.global_position = origin
+
+
+# ---------------------------------------------------------------- wyrzutnia przeciwlotnicza (Piorun)
+# Celowanie (PPM) w samolot / śmigłowiec: po LOCK_TIME namierzony (ton ciągły), strzał wypuszcza
+# rakietę naprowadzaną. Pilot celu słyszy i widzi ostrzeżenie (w PvP przez sieć).
+
+const LOCK_TIME := 1.2
+const LOCK_CONE := 0.07        # kąt od środka celownika [rad], w którym głowica łapie cel
+const LOCK_RANGE := 1600.0
+
+var lock_cand: Node3D = null   # namierzany statek powietrzny
+var lock_t := 0.0
+var _lock_beep := 0.0
+var _lock_net_t := 0.0
+var _remote_lock: Node3D = null
+var _fired_target: Node3D = null
+
+
+func locked() -> bool:
+	return lock_cand != null and is_instance_valid(lock_cand) and lock_t >= LOCK_TIME
+
+
+func seek_target() -> Node3D:
+	if is_remote:
+		var t := _remote_lock
+		_remote_lock = null
+		return t
+	_fired_target = lock_cand if locked() else null
+	return _fired_target
+
+
+func _lockable(a: Node3D, eye: Vector3, fwd: Vector3, cone: float) -> bool:
+	if not is_instance_valid(a) or a.destroyed or a == vehicle:
+		return false
+	var to := a.global_position - eye
+	var d := to.length()
+	if d > LOCK_RANGE or d < 12.0 or fwd.angle_to(to) > cone:
+		return false
+	var q := PhysicsRayQueryParameters3D.create(eye, a.global_position, 1)
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+
+func _tick_lock(dt: float) -> void:
+	if gun == null or not gun.data.get("seeker", false) or ads < 0.6 or down or vehicle or gun.rounds <= 0:
+		lock_cand = null
+		lock_t = 0.0
+		return
+	var eye := _cam.global_position
+	var fwd := -_cam.global_basis.z
+	# raz złapany cel trzyma się w szerszym stożku
+	if lock_cand != null and not _lockable(lock_cand, eye, fwd, LOCK_CONE * 2.5):
+		lock_cand = null
+		lock_t = 0.0
+	if lock_cand == null:
+		var best_a := LOCK_CONE
+		for a in get_tree().get_nodes_in_group("aircraft"):
+			if _lockable(a, eye, fwd, LOCK_CONE):
+				var ang := fwd.angle_to(a.global_position - eye)
+				if ang <= best_a:
+					best_a = ang
+					lock_cand = a
+		lock_t = 0.0
+	if lock_cand == null:
+		return
+	lock_t += dt
+	lock_cand.lock_warn = 0.4
+	# ton głowicy: przerywany przy namierzaniu, szybki gdy namierzony
+	_lock_beep -= dt
+	if _lock_beep <= 0.0:
+		_lock_beep = 0.07 if locked() else 0.28
+		FX.I.play("click", eye, -6.0, 0.0, 3.6 if locked() else 2.4, 4.0)
+	_lock_net_t -= dt
+	if net_on and _lock_net_t <= 0.0:
+		_lock_net_t = 0.3
+		_gd().call_func(lock_cand.net_locked)
 
 
 ## (kukiełka) przeciwnik rzucił granat: ten sam granat leci u mnie (wybuch liczy każdy komputer dla swoich).

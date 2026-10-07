@@ -21,6 +21,7 @@ const CAL := {
 	"12.7x99": {"name": "12,7×99 mm (.50 BMG) M2", "mass": 0.042, "k": 0.00042, "pen": 1.7, "cavity": 0.03, "frag_v": 0.0, "yaw_depth": 0.25, "armor": 5, "tracer": true},
 	"frag": {"name": "odłamek bomby", "mass": 0.003, "k": 0.02, "pen": 0.24, "cavity": 0.007, "frag_v": 0.0, "armor": 3, "tracer": false},
 	"pg7v": {"name": "PG-7V (rakieta kumulacyjna)", "mass": 2.2, "k": 0.0, "pen": 0.5, "cavity": 0.01, "frag_v": 0.0, "armor": 4, "tracer": false},
+	"piorun": {"name": "Piorun (rakieta przeciwlotnicza)", "mass": 10.5, "k": 0.0, "pen": 0.5, "cavity": 0.01, "frag_v": 0.0, "armor": 4, "tracer": false},
 	"12ga": {"name": "12/70 śrut 00 Buck (9 × 8,4 mm)", "mass": 0.0035, "k": 0.0044, "pen": 0.32, "cavity": 0.0045, "frag_v": 0.0, "armor": 2, "pellets": 9, "pellet_spread": 0.011, "tracer": false},
 }
 
@@ -107,6 +108,14 @@ const DB := {
 		"kind": "rifle", "weight": 7.0, "ads_fov": 50.0, "sound": "shot_50",
 		"grip": Vector2(0.0, 0.0), "support": Vector2(0.24, 0.0), "butt": Vector2(-0.45, 0.075),
 		"muzzle": Vector2(0.53, 0.075), "sight": Vector2(0.05, 0.16)},
+	# przenośny zestaw przeciwlotniczy: namierzanie samolotu / śmigłowca (PPM na celu), rakieta
+	# naprowadzana na podczerwień z zapalnikiem zbliżeniowym (missile.gd)
+	"piorun": {"name": "Piorun (PPZR)", "model": "piorun", "proc": "manpad", "length": 1.6, "cal": "piorun", "v0": 28.0,
+		"rpm": 0.0, "modes": ["semi"], "cap": 1, "mags": 3, "feed": "tube", "rocket": true, "seeker": true,
+		"reload": 3.4, "reload_empty": 3.4, "spread": 0.001, "recoil": [0.012, 0.004, 0.02], "zero": 100.0,
+		"kind": "rifle", "weight": 10.5, "ads_fov": 40.0, "sound": "shot_50",
+		"grip": Vector2(0.0, 0.0), "support": Vector2(0.32, 0.02), "butt": Vector2(-0.55, 0.1),
+		"muzzle": Vector2(0.82, 0.1), "sight": Vector2(0.05, 0.24)},
 	"awm": {"name": "AI AWM .338", "model": "SniperRifle_3", "length": 1.2, "cal": "338lm", "v0": 900.0,
 		"rpm": 0.0, "cycle": 1.3, "modes": ["bolt"], "cap": 5, "mags": 20, "feed": "tube",
 		"reload": 0.65, "reload_empty": 0.65, "spread": 0.00015, "recoil": [0.04, 0.008, 0.08], "zero": 300.0,
@@ -151,7 +160,7 @@ func setup(wid: String) -> void:
 	mesh_node.transform.origin = -_raw(data["grip"])
 	add_child(mesh_node)
 	_fix_materials(mesh)
-	if data.get("rocket", false):
+	if data.get("rocket", false) and not data.get("seeker", false):
 		_build_warhead()
 	_build_flash()
 	rounds = int(data["cap"])
@@ -345,6 +354,22 @@ static func _proc_mesh(kind: String) -> Mesh:
 		[_box(Vector3(0.035, 0.1, 0.03)), Transform3D(Basis(Vector3.BACK, 0.15), Vector3(0.24, -0.02, 0)), steel],  # przedni chwyt
 		[_box(Vector3(0.04, 0.05, 0.012)), Transform3D(Basis(), Vector3(0.05, 0.135, 0)), steel],    # celownik
 	]
+	if kind == "manpad":
+		# Piorun: długa zielona tuba z czołowymi zaślepkami, blok baterii i głowicy pod spodem,
+		# chwyt ze spustem, celownik ramkowy z boku
+		var black := StandardMaterial3D.new()
+		black.albedo_color = Color(0.06, 0.06, 0.06)
+		black.roughness = 0.8
+		parts = [
+			[_cyl(0.045, 0.045, 1.62), Transform3D(along_x, Vector3(0.13, 0.1, 0)), olive],          # tuba
+			[_cyl(0.052, 0.052, 0.06), Transform3D(along_x, Vector3(0.9, 0.1, 0)), black],           # przednia zaślepka
+			[_cyl(0.055, 0.05, 0.08), Transform3D(along_x, Vector3(-0.66, 0.1, 0)), black],          # tylna zaślepka
+			[_box(Vector3(0.22, 0.07, 0.06)), Transform3D(Basis(), Vector3(-0.1, 0.03, 0)), black],   # blok startowy
+			[_box(Vector3(0.035, 0.11, 0.03)), Transform3D(Basis(Vector3.BACK, 0.25), Vector3(0.0, -0.04, 0)), black],  # chwyt
+			[_cyl(0.025, 0.025, 0.12), Transform3D(along_x, Vector3(-0.27, 0.0, 0)), steel],         # bateria (BCU)
+			[_box(Vector3(0.012, 0.09, 0.07)), Transform3D(Basis(), Vector3(0.05, 0.2, 0.0)), black], # ramka celownika
+			[_box(Vector3(0.03, 0.03, 0.03)), Transform3D(Basis(), Vector3(0.32, 0.02, 0)), black],   # przedni uchwyt
+		]
 	for prt: Array in parts:
 		var st := SurfaceTool.new()
 		st.append_from(prt[0], 0, prt[1])

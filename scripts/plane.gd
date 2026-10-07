@@ -47,6 +47,10 @@ const RESPAWN := 25.0
 const BOUND := 450.0
 const MOUSE_SENS := 0.0019
 const NET_RATE := 1.0 / 30.0
+const FLARES := 4                          # salwy flar
+const FLARE_RELOAD := 12.0                 # po zużyciu wszystkich: przeładowanie w powietrzu [s]
+const FLARE_CD := 0.8
+const Flare = preload("res://scripts/flare.gd")
 
 
 class MG:
@@ -73,6 +77,12 @@ var stall := false
 var trigger := false
 var cockpit_view := true
 var warn := ""
+var flares := FLARES
+var flare_reload := 0.0
+var missile_warn := INF        # za ile sekund doleci rakieta naprowadzana (ustawia missile.gd)
+var lock_warn := 0.0           # ktoś namierza (ustawia player.gd / net_locked)
+var _flare_cd := 0.0
+var _warn_beep := 0.0
 
 var _w := Vector3.ZERO         # prędkość kątowa w układzie samolotu: x pochylenie (nos w górę +), y odchylenie (nos w prawo +), z przechylenie (w prawo +)
 var _aim_yaw := 0.0
@@ -109,6 +119,7 @@ var _alarm_t := 0.0
 
 func _ready() -> void:
 	add_to_group("plane")
+	add_to_group("aircraft")
 	collision_layer = LAYER
 	collision_mask = 1 | LAYER
 	set_meta("mat", "metal")
@@ -142,7 +153,7 @@ func _ready() -> void:
 	home = global_transform
 	if Player.net_on:
 		var gd := _gd()
-		for f in [net_plane, net_board, net_exit, net_damage, net_explode, net_bomb]:
+		for f in [net_plane, net_board, net_exit, net_damage, net_explode, net_bomb, net_flares, net_locked]:
 			gd.expose_func(f)
 	_reset()
 
@@ -521,6 +532,8 @@ func pilot_input(e: InputEvent) -> void:
 			start_salvo()
 	elif e.is_action_pressed("use"):
 		request_exit()
+	elif e.is_action_pressed("flares"):
+		release_flares()
 	elif e.is_action_pressed("view_toggle"):
 		cockpit_view = not cockpit_view
 	elif e.is_action_pressed("ui_cancel"):
@@ -560,7 +573,60 @@ func _physics_process(dt: float) -> void:
 	_guns(dt)
 	if _sim_here():
 		_bombing(dt)
+	_countermeasures(dt)
 	_seat_pilot()
+
+
+# ---------------------------------------------------------------- flary, ostrzeżenia
+
+## Salwa flar [C]: rakiety lecące na samolot, które są jeszcze dość daleko, idą za flarami.
+func release_flares() -> void:
+	if flares <= 0 or _flare_cd > 0.0 or destroyed:
+		if flares <= 0 and _local_pilot():
+			pilot._msg("Flary: przeładowanie %d s" % ceili(FLARE_RELOAD - flare_reload))
+		return
+	flares -= 1
+	_flare_cd = FLARE_CD
+	Flare.salvo(self)
+	if Player.net_on:
+		_gd().call_func(net_flares)
+
+
+func _countermeasures(dt: float) -> void:
+	_flare_cd = maxf(_flare_cd - dt, 0.0)
+	if flares < FLARES:
+		flare_reload += dt
+		if flare_reload >= FLARE_RELOAD:
+			flare_reload = 0.0
+			flares = FLARES
+	lock_warn = maxf(lock_warn - dt, 0.0)
+	# missile_warn odświeża rakieta co klatkę; bez niej po chwili gaśnie
+	missile_warn = missile_warn + dt if missile_warn < INF else INF
+	if missile_warn > 30.0:
+		missile_warn = INF
+	if _local_pilot():
+		_warn_beep -= dt
+		var incoming := missile_warn < 15.0 and _missile_near()
+		if _warn_beep <= 0.0 and (incoming or lock_warn > 0.0):
+			_warn_beep = 0.12 if incoming else 0.45
+			FX.I.play("click", _cam.global_position, 0.0 if incoming else -4.0, 0.0, 3.0 if incoming else 1.8, 4.0)
+
+
+## Czy jakaś rakieta wciąż leci na ten samolot (nie na flarę).
+func _missile_near() -> bool:
+	for m in get_tree().get_nodes_in_group("missile"):
+		if m.target == self:
+			return true
+	return false
+
+
+func net_flares() -> void:
+	flares = maxi(flares - 1, 0)
+	Flare.salvo(self)
+
+
+func net_locked() -> void:
+	lock_warn = 0.5
 
 
 func _simulate(dt: float) -> void:
@@ -978,6 +1044,8 @@ func _reset() -> void:
 	hp = MAX_HP
 	ammo = AMMO
 	bombs = BOMBS
+	flares = FLARES
+	flare_reload = 0.0
 	_salvo = false
 	_show_racks()
 	throttle = 0.0

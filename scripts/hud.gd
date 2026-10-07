@@ -46,6 +46,7 @@ func _draw() -> void:
 			_draw_help(font)
 		_draw_crosshair(vs)
 		_draw_weapon(font, vs)
+		_draw_lock(font, vs)
 		_draw_plane_hint(font, vs)
 	_draw_damage_dirs(vs)
 	_draw_kills(font, vs)
@@ -333,7 +334,7 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 	var help := [
 		"Mysz - kierunek lotu (samolot leci tam, gdzie patrzysz)   W/S - gaz   A/D - ster kierunku   strzałki - drążek ręcznie",
-		"LPM - karabiny maszynowe   Spacja - bomby (seria, nalot dywanowy) / na ziemi hamulce   V - kabina / widok z tyłu   F - wysiądź (na ziemi)",
+		"LPM - karabiny maszynowe   Spacja - bomby (seria, nalot dywanowy) / na ziemi hamulce   C - flary   V - kabina / widok z tyłu   F - wysiądź (na ziemi)",
 	]
 	if show_help:
 		draw_rect(Rect2(10, 244, 820, help.size() * 20 + 14), Color(0, 0, 0, 0.45))
@@ -402,6 +403,61 @@ func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 		_center_text(font, warns[i], Vector2(c.x, c.y - 120 - i * 28), 22, Color(1, 0.35, 0.25, blink))
 	if pl.on_ground and pl.throttle < 0.05 and pl.velocity.length() < 1.0:
 		_center_text(font, "W — gaz do startu, spójrz lekko w górę przy ~110 km/h", Vector2(c.x, c.y + 150), 16, Color(0.85, 1.0, 0.8, 0.85))
+	_draw_countermeasures(font, vs, pl, Vector2(x, y - 52))
+
+
+## Flary (salwy, przeładowanie) i ostrzeżenia: namierzanie, nadlatująca rakieta (samolot, śmigłowiec).
+func _draw_countermeasures(font: Font, vs: Vector2, pl, at: Vector2) -> void:
+	var nf: int = pl.flares
+	if nf > 0:
+		draw_string(font, at, "FLARY  %d / %d   [C]" % [nf, pl.FLARES], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.85, 0.5))
+	if nf < pl.FLARES:
+		_bar(at + Vector2(0, 8), 160, pl.flare_reload / pl.FLARE_RELOAD, Color(1, 0.6, 0.3), "flary: przeładowanie %d s" % ceili(pl.FLARE_RELOAD - pl.flare_reload), font)
+	var c := vs * 0.5
+	var blink := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.03)
+	if pl._missile_near():
+		var tt: float = pl.missile_warn
+		var txt := "RAKIETA!  FLARY — [C]" if nf > 0 else "RAKIETA!  UNIK — BRAK FLAR"
+		if tt < 30.0:
+			txt += "   %.1f s" % tt
+		_center_text(font, txt, Vector2(c.x, c.y - 190), 30, Color(1, 0.2, 0.15, blink))
+	elif pl.lock_warn > 0.0:
+		_center_text(font, "NAMIERZANIE — PRZECIWNIK CELUJE RAKIETĄ", Vector2(c.x, c.y - 190), 22, Color(1, 0.75, 0.2, 0.6 + 0.4 * blink))
+
+
+## Wyrzutnia przeciwlotnicza: ramka na namierzanym celu, postęp i stan namierzenia.
+func _draw_lock(font: Font, vs: Vector2) -> void:
+	var g = player.gun
+	if g == null or not g.data.get("seeker", false):
+		return
+	var c := vs * 0.5
+	if player.ads < 0.6:
+		_center_text(font, "PPM — namierzanie samolotu / śmigłowca", Vector2(c.x, c.y + 60), 14, Color(1, 0.9, 0.6, 0.8))
+		return
+	# stożek głowicy
+	draw_arc(c, 46.0, 0.0, TAU, 40, Color(1, 1, 1, 0.25), 1.0, true)
+	var t = player.lock_cand
+	var cam := get_viewport().get_camera_3d()
+	if t == null or not is_instance_valid(t) or cam == null or cam.is_position_behind(t.global_position):
+		_center_text(font, "SZUKANIE CELU", Vector2(c.x, c.y + 70), 14, Color(1, 1, 1, 0.6))
+		return
+	var p: Vector2 = cam.unproject_position(t.global_position)
+	var k: float = clampf(player.lock_t / player.LOCK_TIME, 0.0, 1.0)
+	var locked: bool = player.locked()
+	var col := Color(1, 0.25, 0.2) if locked else Color(1, 0.85, 0.3)
+	var s := lerpf(40.0, 20.0, k)
+	for d: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+		var corner := p + d * s
+		draw_line(corner, corner - Vector2(d.x * 10.0, 0), col, 2.0)
+		draw_line(corner, corner - Vector2(0, d.y * 10.0), col, 2.0)
+	if locked:
+		draw_rect(Rect2(p - Vector2(s, s), Vector2(s, s) * 2.0), Color(col, 0.15))
+		_center_text(font, "NAMIERZONO — LPM", Vector2(c.x, c.y + 70), 18, col)
+	else:
+		draw_arc(p, s + 8.0, -PI * 0.5, -PI * 0.5 + TAU * k, 32, col, 2.0, true)
+		_center_text(font, "NAMIERZANIE...", Vector2(c.x, c.y + 70), 16, col)
+	var d3: float = t.global_position.distance_to(cam.global_position)
+	draw_string(font, p + Vector2(s + 6, -s), "%d m" % int(d3), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
 
 
 ## Celownik bombowy: krzyż w przewidywanym miejscu upadku bomb.

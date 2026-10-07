@@ -491,6 +491,7 @@ func _setup_input() -> void:
 	_key("lean_left", KEY_Q)
 	_key("lean_right", KEY_E)
 	_key("grenade", KEY_G)
+	_key("flares", KEY_C)
 	_key("walk_toggle", KEY_X)
 	_key("xray", KEY_TAB)
 	_key("restart", KEY_F5)

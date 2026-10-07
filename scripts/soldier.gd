@@ -136,14 +136,22 @@ func shoot(dir: Vector3, spread_extra := 0.0) -> bool:
 ## Pocisk z balistyki albo rakieta (RPG). Ten sam kod dla strzału i jego odtworzenia u przeciwnika.
 func fire_projectile(g: Node3D, m: Vector3, d: Vector3, tracer: bool) -> void:
 	if g.data.get("rocket", false):
-		var r = load("res://scripts/rocket.gd").new()
+		var seeker: bool = g.data.get("seeker", false)
+		var r = load("res://scripts/missile.gd" if seeker else "res://scripts/rocket.gd").new()
 		r.vel = d * float(g.data["v0"])
 		r.shooter = self
+		if seeker:
+			r.target = seek_target()
 		get_parent().add_child(r)
 		r.global_position = m + d * 0.1
 		r.global_basis = Basis.looking_at(d, Vector3.UP if absf(d.y) < 0.99 else Vector3.FORWARD)
 		return
 	Ballistics.I.fire(self, g, m, d, tracer)
+
+
+## Cel namierzony wyrzutnią przeciwlotniczą (gracz nadpisuje).
+func seek_target() -> Node3D:
+	return null
 
 
 ## Dym z lufy i łuska z okna wyrzutowego (pompka / zamek / obrzyn / rewolwer: bez łuski przy strzale).

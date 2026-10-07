@@ -304,11 +304,11 @@ func _page_controls() -> Control:
 	cols.add_theme_constant_override("separation", 40)
 	cols.add_child(_keys("PIECHOTA", [
 		["WASD", "ruch"], ["Shift", "bieg / wstrzymanie oddechu"], ["Spacja", "skok"], ["Ctrl", "kucanie"],
-		["LPM / PPM", "strzał / celowanie"], ["R", "przeładowanie"], ["B", "tryb ognia"], ["1–0, kółko", "broń"],
+		["LPM / PPM", "strzał / celowanie"], ["R", "przeładowanie"], ["B", "tryb ognia"], ["1–0, kółko", "broń (8 — Piorun: PPM namierza)"],
 		["H", "opatrunek"], ["F", "samolot / skrzynka"], ["Q / E", "wychylanie"], ["G", "granat"], ["V", "widok"], ["L", "laser"], ["Tab", "rentgen"]]))
 	cols.add_child(_keys("SAMOLOT", [
 		["Mysz", "kierunek lotu"], ["W / S", "gaz"], ["A / D", "ster kierunku"], ["Strzałki", "drążek ręcznie"],
-		["LPM", "karabiny 12,7 mm"], ["Spacja", "seria bomb / hamulce"], ["V", "kabina / z tyłu"], ["F", "wysiądź (na ziemi)"],
+		["LPM", "karabiny 12,7 mm"], ["Spacja", "seria bomb / hamulce"], ["C", "flary"], ["V", "kabina / z tyłu"], ["F", "wysiądź (na ziemi)"],
 		["", ""], ["F1", "pomoc w grze"], ["F2", "filtr kolorów"], ["Esc", "pauza"]]))
 	v.add_child(cols)
 	v.add_child(_button("‹  WSTECZ", "", func(): show_page("main")))
