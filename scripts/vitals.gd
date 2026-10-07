@@ -9,6 +9,9 @@ const BLOOD := 5000.0          # mL
 const IMPAIRED := 0.25         # ułamek utraconej krwi: spowolnienie, drżenie rąk
 const UNCONSCIOUS := 0.40
 const DEATH := 0.52
+# gracz (hardy): nie mdleje od krwotoku, ginie dopiero przy 2500 mL, poniżej 3000 mL nie chodzi
+const HARDY_DEATH := 0.5
+const HARDY_NO_WALK := 0.4
 
 # Narząd -> skutki. bleed [mL/s] przy pełnej jamie rany, clot: czas zatrzymywania się krwawienia [s]
 # (0 = nie krzepnie samo), ko: utrata przytomności po tylu sekundach (niezależnie od krwi),
@@ -81,6 +84,7 @@ var breath := 0.0              # niewydolność oddechowa 0..1 (płuca, tchawica
 var legs := 0                  # niesprawne nogi (0..2)
 var arms := {"_l": false, "_r": false}
 var cause := ""
+var hardy := false             # gracz: zasady jak wyżej (boty mdleją i giną według DEATH / UNCONSCIOUS)
 var _leg_segs := {}
 var _calm_t := 0.0             # jak długo nic nie krwawi (odnawianie krwi)
 
@@ -137,9 +141,16 @@ func capacity() -> float:
 func mobility() -> float:
 	if not conscious:
 		return 0.0
+	if cant_walk():
+		return 0.12   # czołganie
 	var c := 1.0 - smoothstep(0.3, UNCONSCIOUS, lost()) * 0.6
 	c -= pain * 0.1 + breath * 0.3
 	return clampf(c, 0.3, 1.0)
+
+
+## Gracz poniżej 3000 mL krwi: nie ustoi na nogach (czołga się, może strzelać i się opatrzyć).
+func cant_walk() -> bool:
+	return hardy and lost() >= HARDY_NO_WALK
 
 
 ## Rana od pocisku. organs: lista narządów na drodze (z humanoid.organs_hit), cavity: mnożnik jamy rany.
@@ -176,7 +187,7 @@ func wound(seg: String, organs: Array, cavity: float) -> Dictionary:
 			cause = fx["name"]
 		if fx.has("bleed"):
 			_add(fx["name"], float(fx["bleed"]) * clampf(cavity, 0.6, 2.0), float(fx.get("clot", 0.0)), seg, fx.get("limb", false))
-		if fx.has("ko"):
+		if fx.has("ko") and not hardy:
 			var t := float(fx["ko"]) * randf_range(0.7, 1.4)
 			ko_timer = t if ko_timer < 0.0 else minf(ko_timer, t)
 			res["fatal_soon"] = true
@@ -258,10 +269,10 @@ func step(dt: float) -> String:
 		if ko_timer <= 0.0 and conscious:
 			conscious = false
 			ev = "ko"
-	if conscious and lost() >= UNCONSCIOUS:
+	if conscious and lost() >= UNCONSCIOUS and not hardy:
 		conscious = false
 		ev = "ko"
-	if lost() >= DEATH:
+	if lost() >= (HARDY_DEATH if hardy else DEATH):
 		if cause == "":
 			cause = "wykrwawienie"
 		_die()

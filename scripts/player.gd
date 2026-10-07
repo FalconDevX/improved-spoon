@@ -65,6 +65,7 @@ var vehicle = null             # samolot, w którym siedzę (plane.gd)
 
 func _ready() -> void:
 	team = 1 if is_remote else 0
+	vitals.hardy = true   # gracz: ginie dopiero przy 2500 mL krwi, nie mdleje od krwotoku
 	if is_remote:
 		# przeciwnik w PvP: tylko odtwarza stan przysyłany z jego komputera
 		add_to_group("net_player")
@@ -298,7 +299,7 @@ func _physics_process(dt: float) -> void:
 func _movement(dt: float) -> void:
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var wish := Basis(Vector3.UP, _yaw) * Vector3(input.x, 0.0, input.y)
-	crouching = Input.is_action_pressed("crouch") or vitals.legs >= 1
+	crouching = Input.is_action_pressed("crouch") or vitals.legs >= 1 or vitals.cant_walk()
 	aiming = Input.is_action_pressed("aim") and _switch_t <= 0.0 and bandaging < 0.0
 	var sprinting := Input.is_action_pressed("run") and input.y < -0.3 and not crouching and not aiming and stamina > 1.0 and reloading < 0.0 and vitals.legs == 0
 	holding_breath = Input.is_action_pressed("run") and aiming and breath > 0.0

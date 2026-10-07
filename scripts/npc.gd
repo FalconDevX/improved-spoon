@@ -388,8 +388,8 @@ func _engage(dt: float, d: float) -> void:
 	# błąd celowania: duży na początku, maleje w trakcie składania; rośnie z odległością,
 	# przygnieceniem ogniem, ruchem celu, ranami
 	var cap := vitals.capacity()
-	var settle := lerpf(1.0, 0.25, smoothstep(0.0, 1.6, _sight_time))
-	var base := 0.006 + d * 0.00012
+	var settle := lerpf(1.0, 0.45, smoothstep(0.0, 2.0, _sight_time))
+	var base := 0.012 + d * 0.00022
 	if marksman:
 		base *= 0.4
 	var err: float = base * settle * (1.0 + suppression * 1.6) * (1.0 + _target.velocity.length() * 0.15) / maxf(cap, 0.25)

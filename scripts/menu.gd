@@ -158,8 +158,8 @@ func _page_main() -> Control:
 			v.add_child(_button("OPCJE GRY", "Opcje gry (boty, restart mapy) ustawia host.", func(): pass))
 	else:
 		v.add_child(_button("GRA SOLO", "Misja z oddziałami botów na posterunkach. Na lotnisku czekają myśliwce z bombami.", func(): solo.emit()))
-		v.add_child(_button("BITWA PVP 1 NA 1", "Pojedynek z drugim graczem przez internet albo w sieci lokalnej.", func(): show_page("pvp")))
-		v.add_child(_button("OPCJE GRY", "Liczba botów, poziom trudności i odradzanie botów (solo i jako host PvP).", func(): show_page("game")))
+		v.add_child(_button("MULTIPLAYER", "Gra z drugim graczem przez internet albo w sieci lokalnej (z botami).", func(): show_page("pvp")))
+		v.add_child(_button("OPCJE GRY", "Liczba botów, poziom trudności i odradzanie botów (solo i jako host w multiplayerze).", func(): show_page("game")))
 	v.add_child(_button("USTAWIENIA", "Filtr kolorów, jakość grafiki, czułość myszy, pole widzenia, głośność.", func(): show_page("settings")))
 	v.add_child(_button("STEROWANIE", "Klawisze piechoty i samolotu.", func(): show_page("controls")))
 	if in_game:
@@ -170,7 +170,7 @@ func _page_main() -> Control:
 
 func _page_pvp() -> Control:
 	var v := _box()
-	v.add_child(_heading("BITWA PVP"))
+	v.add_child(_heading("MULTIPLAYER"))
 	var l := Label.new()
 	l.text = "Kod gry — ten sam u obu graczy"
 	l.add_theme_font_size_override("font_size", 15)
@@ -292,7 +292,7 @@ func _page_game() -> Control:
 	l.add_theme_font_size_override("font_size", 14)
 	l.add_theme_color_override("font_color", UiTheme.DIM)
 	v.add_child(l)
-	v.add_child(_button("RESTART MAPY", "Nowa runda z obecnymi opcjami (w PvP także u przeciwnika).", func(): restart.emit()))
+	v.add_child(_button("RESTART MAPY", "Nowa runda z obecnymi opcjami (w multiplayerze także u drugiego gracza).", func(): restart.emit()))
 	v.add_child(_button("‹  WSTECZ", "", func(): show_page("main")))
 	return v
 
