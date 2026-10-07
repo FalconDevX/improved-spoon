@@ -19,7 +19,7 @@ Godota) do folderu gry, zaimportuje zasoby i włączy grę. Kolejne uruchomienia
 2. Poczekaj, aż edytor zaimportuje zasoby (pierwszy raz trwa chwilę).
    Jeśli pojawi się komunikat o wtyczce GD-Sync, zamknij edytor i otwórz projekt ponownie —
    wtyczka startuje dopiero po zakończonym imporcie.
-3. Uruchom grę (F5) albo `start.bat` (popraw w nim ścieżkę do Godota).
+3. Uruchom grę (F5) albo `start.bat` (szuka Godota w folderze gry, a jak go nie ma — pobiera).
 
 ## Gra przez internet (GD-Sync)
 
