@@ -467,7 +467,7 @@ func _start_pvp(online: bool, host: bool, code: String) -> void:
 		return
 	if not gd.connected.is_connected(_on_gd_connected):
 		gd.connected.connect(_on_gd_connected)
-		gd.connection_failed.connect(func(e): _set_status("Nie udało się połączyć z GD-Sync (błąd %d). Online wymaga kluczy API — patrz instrukcja." % e))
+		gd.connection_failed.connect(_on_connection_failed)
 		gd.lobby_created.connect(func(n): gd.lobby_join(n))
 		gd.lobby_creation_failed.connect(func(n, e): _set_status("Nie udało się stworzyć gry %s (błąd %d) — może kod jest zajęty?" % [n, e]))
 		gd.lobby_joined.connect(_on_lobby_joined)
@@ -481,6 +481,19 @@ func _start_pvp(online: bool, host: bool, code: String) -> void:
 		gd.start_multiplayer()
 	else:
 		gd.start_local_multiplayer()
+
+
+## Czytelny powód nieudanego połączenia (kody z GD-Sync ENUMS.CONNECTION_FAILED).
+func _on_connection_failed(e: int) -> void:
+	match e:
+		0:
+			_set_status("Brak kluczy API GD-Sync albo są złe. Do gry online skopiuj plik keys.cfg od osoby, która ma klucze, do folderu addons/GD-Sync (obaj gracze te same klucze). Bez kluczy działa gra w sieci lokalnej.")
+		1:
+			_set_status("Serwer GD-Sync nie odpowiada (przekroczony czas). Sprawdź internet i spróbuj ponownie.")
+		2:
+			_set_status("Nie udało się otworzyć portu sieci lokalnej — zamknij drugą kopię gry albo zezwól grze w zaporze Windows.")
+		_:
+			_set_status("Nie udało się połączyć z GD-Sync (błąd %d)." % e)
 
 
 func _on_gd_connected() -> void:
