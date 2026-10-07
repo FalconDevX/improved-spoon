@@ -113,7 +113,7 @@ func shoot(dir: Vector3, spread_extra := 0.0) -> bool:
 	var d := _jitter(dir, sigma)
 	_shot_n += 1
 	var tracer: bool = gun.cal.get("tracer", false) and _shot_n % 4 == 0
-	Ballistics.I.fire(self, gun, m, d, tracer)
+	fire_projectile(gun, m, d, tracer)
 	_on_fired(m, d, tracer)
 	gun.flash()
 	_shot_fx(gun, m, d)
@@ -133,9 +133,28 @@ func shoot(dir: Vector3, spread_extra := 0.0) -> bool:
 	return true
 
 
+## Pocisk z balistyki albo rakieta (RPG). Ten sam kod dla strzału i jego odtworzenia u przeciwnika.
+func fire_projectile(g: Node3D, m: Vector3, d: Vector3, tracer: bool) -> void:
+	if g.data.get("rocket", false):
+		var r = load("res://scripts/rocket.gd").new()
+		r.vel = d * float(g.data["v0"])
+		r.shooter = self
+		get_parent().add_child(r)
+		r.global_position = m + d * 0.1
+		r.global_basis = Basis.looking_at(d, Vector3.UP if absf(d.y) < 0.99 else Vector3.FORWARD)
+		return
+	Ballistics.I.fire(self, g, m, d, tracer)
+
+
 ## Dym z lufy i łuska z okna wyrzutowego (pompka / zamek / obrzyn / rewolwer: bez łuski przy strzale).
 func _shot_fx(g: Node3D, m: Vector3, d: Vector3) -> void:
 	FX.I.muzzle_smoke(m, d, 1.5 if g.data["cal"] == "12ga" else 1.0)
+	if g.data.get("rocket", false):
+		# RPG: chmura gazów z tylnej dyszy (strefa zagrożenia za strzelcem)
+		var rear: Vector3 = g.global_transform * g.anchor("butt")
+		for k in 3:
+			FX.I.muzzle_smoke(rear, -d * (1.0 + k * 0.6), 2.5)
+		return
 	var md: String = g.fire_mode()
 	if md == "pump" or md == "bolt" or g.id in ["sawed", "m686"]:
 		return

@@ -82,6 +82,34 @@ var legs := 0                  # niesprawne nogi (0..2)
 var arms := {"_l": false, "_r": false}
 var cause := ""
 var _leg_segs := {}
+var _calm_t := 0.0             # jak długo nic nie krwawi (odnawianie krwi)
+
+const REGEN_DELAY := 4.0       # s bez krwawienia, zanim krew zacznie się odnawiać
+const REGEN_RATE := 60.0       # mL/s
+
+
+## Odnawianie krwi, gdy nic nie krwawi i żołnierz jest przytomny; z krwią wraca sprawność.
+func _regen(dt: float) -> void:
+	if not conscious or bleed_rate() > 0.05:
+		_calm_t = 0.0
+		return
+	_calm_t += dt
+	if _calm_t < REGEN_DELAY or blood >= BLOOD:
+		return
+	blood = minf(blood + REGEN_RATE * dt, BLOOD)
+	pain = maxf(pain - dt * 0.05, 0.0)
+	breath = maxf(breath - dt * 0.02, 0.0)
+
+
+## Apteczka: tamuje rany, uzupełnia krew, zdejmuje ból i duszność (złamane nogi zostają).
+func heal(amount: float) -> void:
+	for w: Dictionary in wounds:
+		w["dressed"] = true
+		w["rate"] = 0.0
+	blood = minf(blood + amount, BLOOD)
+	pain = 0.0
+	breath = 0.0
+	ko_timer = -1.0
 
 
 func lost() -> float:
@@ -187,13 +215,15 @@ func treat() -> String:
 			best = i
 	if best < 0 or float(wounds[best]["rate"]) < 0.05:
 		return ""
-	var w: Dictionary = wounds[best]
-	w["dressed"] = true
-	if w["limb"]:
-		w["rate"] = 0.0   # opaska uciskowa na kończynie zatrzymuje krwotok tętniczy
-		return "Opaska uciskowa: " + String(w["name"]).to_lower()
-	w["rate"] = float(w["rate"]) * (0.15 if float(w["rate"]) < 20.0 else 0.6)  # ucisk/tamponada
-	return "Opatrunek: " + String(w["name"]).to_lower()
+	# opatrunek / opaski uciskowe tamują całe krwawienie (wszystkie rany naraz)
+	var n := 0
+	for w: Dictionary in wounds:
+		if not w["dressed"] and float(w["rate"]) > 0.0:
+			n += 1
+		w["dressed"] = true
+		w["rate"] = 0.0
+	pain = maxf(pain - 0.3, 0.0)
+	return "Krwawienie zatamowane (%d %s)" % [n, "rana" if n == 1 else "rany"]
 
 
 ## Krok symulacji. Zwraca "" albo zdarzenie: "ko" (utrata przytomności), "dead".
@@ -201,6 +231,7 @@ func step(dt: float) -> String:
 	if dead:
 		return ""
 	var ev := ""
+	_regen(dt)
 	var r := 0.0
 	for w: Dictionary in wounds:
 		w["t"] = float(w["t"]) + dt

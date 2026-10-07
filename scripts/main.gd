@@ -142,11 +142,14 @@ func _spawn_squads() -> void:
 ## Skrzynki z amunicją (na siatce nawigacyjnej, żeby nie stały w ścianie; te same miejsca u obu graczy).
 func _spawn_crates() -> void:
 	var map := get_world_3d().navigation_map
-	for i in _level.ammo_spots.size():
-		var want: Vector3 = _level.ammo_spots[i]
+	var spots: Array = _level.ammo_spots + _level.med_spots
+	for i in spots.size():
+		var want: Vector3 = spots[i]
 		var p := NavigationServer3D.map_get_closest_point(map, want)
 		var c := AmmoCrate.new()
-		c.name = "AmmoCrate%d" % i
+		var med: bool = i >= _level.ammo_spots.size()
+		c.kind = "med" if med else "ammo"
+		c.name = ("MedKit%d" if med else "AmmoCrate%d") % i
 		c.position = Vector3(p.x, 0.0, p.z)
 		c.rotation.y = float(i) * 0.7
 		add_child(c)
@@ -214,7 +217,10 @@ func _setup_input() -> void:
 	_key("reload", KEY_R)
 	_key("fire_mode", KEY_B)
 	_key("bandage", KEY_H)
-	_key("use", KEY_E)
+	_key("use", KEY_F)
+	_key("lean_left", KEY_Q)
+	_key("lean_right", KEY_E)
+	_key("grenade", KEY_G)
 	_key("walk_toggle", KEY_X)
 	_key("xray", KEY_TAB)
 	_key("restart", KEY_F5)

@@ -94,8 +94,15 @@ func _draw_map() -> void:
 		var s2 := 4.5 / _zoom
 		var full: bool = cr.is_ready()
 		v.draw_rect(Rect2(q - Vector2(s2, s2), Vector2(s2, s2) * 2.0), Color(0, 0, 0, 0.7))
-		v.draw_rect(Rect2(q - Vector2(s2, s2) * 0.75, Vector2(s2, s2) * 1.5), Color(1.0, 0.82, 0.25) if full else Color(0.55, 0.55, 0.55))
-		v.draw_line(q - Vector2(0, s2 * 0.6), q + Vector2(0, s2 * 0.6), Color(0.15, 0.12, 0.05), 1.2 / _zoom)
+		if cr.kind == "med":
+			# apteczka: biały kwadrat z czerwonym krzyżem
+			v.draw_rect(Rect2(q - Vector2(s2, s2) * 0.75, Vector2(s2, s2) * 1.5), Color(0.95, 0.95, 0.95) if full else Color(0.55, 0.55, 0.55))
+			var rc := Color(0.9, 0.1, 0.08) if full else Color(0.35, 0.35, 0.35)
+			v.draw_rect(Rect2(q - Vector2(s2 * 0.55, s2 * 0.18), Vector2(s2 * 1.1, s2 * 0.36)), rc)
+			v.draw_rect(Rect2(q - Vector2(s2 * 0.18, s2 * 0.55), Vector2(s2 * 0.36, s2 * 1.1)), rc)
+		else:
+			v.draw_rect(Rect2(q - Vector2(s2, s2) * 0.75, Vector2(s2, s2) * 1.5), Color(1.0, 0.82, 0.25) if full else Color(0.55, 0.55, 0.55))
+			v.draw_line(q - Vector2(0, s2 * 0.6), q + Vector2(0, s2 * 0.6), Color(0.15, 0.12, 0.05), 1.2 / _zoom)
 	# samoloty
 	for pl in get_tree().get_nodes_in_group("plane"):
 		if pl.destroyed or pl == p.get("vehicle"):

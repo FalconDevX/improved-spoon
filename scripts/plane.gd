@@ -1,5 +1,5 @@
 extends CharacterBody3D
-## Samolot myśliwski (śmigłowy dolnopłat z podwoziem trójkołowym). Wsiadanie [E] na ziemi,
+## Samolot myśliwski (śmigłowy dolnopłat z podwoziem trójkołowym). Wsiadanie [F] na ziemi,
 ## start, lot i strzelanie z czterech karabinów maszynowych 12,7 mm w skrzydłach (zbieżność ognia
 ## przed nosem). Lot: siła nośna zależna od kąta natarcia (przeciągnięcie), opór szkodliwy
 ## i indukowany, ciąg śmigła, stateczność kierunkowa. Sterowanie myszą: samolot leci tam, gdzie
@@ -38,6 +38,7 @@ const CRASH_VY := 9.0
 const MAX_HP := 160.0
 const AMMO := 1600                         # 4 × 400 naboi
 const BOMBS := 12                          # 12 × 50 kg pod skrzydłami, zrzut całą serią (nalot dywanowy)
+const BOMB_RELOAD := 8.0                   # bomby bez limitu: po serii pełne przeładowanie w powietrzu [s]
 const BOMB_DT := 0.11                      # odstęp między bombami w serii
 const GUN_DT := 0.02                       # odstęp między strzałami kolejnych karabinów (4 × 750/min)
 const CONVERGE := 280.0
@@ -61,6 +62,7 @@ var hp := MAX_HP
 var throttle := 0.0
 var ammo := AMMO
 var bombs := BOMBS
+var bomb_reload := 0.0                     # postęp przeładowania bomb [s]
 var _salvo := false
 var _bomb_t := 0.0
 var _bomb_k := 0
@@ -436,7 +438,7 @@ func board(p) -> void:
 	cockpit_view = p.first_person
 	_cam.current = true
 	_place_camera(1.0)
-	p._msg("Samolot: W/S — gaz, mysz — kierunek lotu, LPM — karabiny, E — wysiądź")
+	p._msg("Samolot: W/S — gaz, mysz — kierunek lotu, LPM — karabiny, F — wysiądź")
 
 
 func _set_pilot(p) -> void:
@@ -778,6 +780,15 @@ func start_salvo() -> void:
 
 
 func _bombing(dt: float) -> void:
+	# bomby bez limitu: gdy nie ma serii, cały komplet podwiesza się w BOMB_RELOAD sekund
+	if not _salvo and bombs < BOMBS and not destroyed:
+		bomb_reload += dt
+		if bomb_reload >= BOMB_RELOAD:
+			bomb_reload = 0.0
+			bombs = BOMBS
+			_show_racks()
+	else:
+		bomb_reload = 0.0
 	if not _salvo:
 		return
 	_bomb_t -= dt

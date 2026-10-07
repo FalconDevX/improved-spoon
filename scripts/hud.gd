@@ -71,7 +71,7 @@ func _draw_help(font: Font) -> void:
 	var help := [
 		"WASD - ruch   Shift - bieg (w celowaniu: wstrzymanie oddechu)   Spacja - skok   Ctrl - kucanie   X - chód",
 		"LPM - strzał   PPM - celowanie   R - przeładowanie   B - tryb ognia   1-0 / kółko - broń",
-		"V - pierwsza osoba / zza ramienia   L - laser   H - opatrunek   E - samolot / amunicja poległych   Tab - rentgen   Esc - kursor",
+		"V - pierwsza osoba / zza ramienia   L - laser   H - opatrunek   F - samolot / skrzynki   Q/E - wychylanie   G - granat   Tab - rentgen   Esc - kursor",
 	]
 	if show_help:
 		draw_rect(Rect2(10, 244, 820, help.size() * 20 + 14), Color(0, 0, 0, 0.45))
@@ -307,14 +307,15 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 		return
 	for pl in get_tree().get_nodes_in_group("plane"):
 		if pl.can_board(player):
-			_center_text(font, "[E] — wsiądź do samolotu", Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
+			_center_text(font, "[F] — wsiądź do samolotu", Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
 			return
 	for c in get_tree().get_nodes_in_group("ammo_crate"):
 		if c.near(player):
+			var med: bool = c.kind == "med"
 			if c.is_ready():
-				_center_text(font, "[E] — uzupełnij amunicję", Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(1.0, 0.88, 0.45))
+				_center_text(font, "[F] — apteczka (lecz rany)" if med else "[F] — uzupełnij amunicję", Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(1.0, 0.45, 0.4) if med else Color(1.0, 0.88, 0.45))
 			else:
-				_center_text(font, "Skrzynka pusta — %d s" % ceili(c.cooldown), Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 16, Color(0.75, 0.75, 0.75))
+				_center_text(font, "%s pusta — %d s" % ["Apteczka" if med else "Skrzynka", ceili(c.cooldown)], Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 16, Color(0.75, 0.75, 0.75))
 			return
 
 
@@ -322,7 +323,7 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 	var help := [
 		"Mysz - kierunek lotu (samolot leci tam, gdzie patrzysz)   W/S - gaz   A/D - ster kierunku   strzałki - drążek ręcznie",
-		"LPM - karabiny maszynowe   Spacja - bomby (seria, nalot dywanowy) / na ziemi hamulce   V - kabina / widok z tyłu   E - wysiądź (na ziemi)",
+		"LPM - karabiny maszynowe   Spacja - bomby (seria, nalot dywanowy) / na ziemi hamulce   V - kabina / widok z tyłu   F - wysiądź (na ziemi)",
 	]
 	if show_help:
 		draw_rect(Rect2(10, 244, 820, help.size() * 20 + 14), Color(0, 0, 0, 0.45))
@@ -362,7 +363,11 @@ func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 	if not show_help:
 		draw_string(font, Vector2(x, y + 168), "F1 — sterowanie samolotem", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
 	var nb: int = pl.bombs
-	draw_string(font, Vector2(x, y + 146), "BOMBY  %d × 50 kg  [Spacja]" % nb, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.85, 0.5) if nb > 0 else Color(1, 0.4, 0.3))
+	if nb < Aircraft.BOMBS:
+		var rk: float = pl.bomb_reload / Aircraft.BOMB_RELOAD
+		_bar(Vector2(x, y + 138), 160, rk, Color(1, 0.75, 0.3), "bomby: przeładowanie %d s" % ceili(Aircraft.BOMB_RELOAD - pl.bomb_reload), font)
+	else:
+		draw_string(font, Vector2(x, y + 146), "BOMBY  %d × 50 kg  [Spacja]  — bez limitu" % nb, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.85, 0.5))
 	if cam:
 		_draw_bomb_sight(cam, pl, nb)
 		_draw_air_targets(font, cam, pl)

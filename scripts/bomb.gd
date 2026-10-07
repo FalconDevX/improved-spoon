@@ -31,6 +31,12 @@ var vel := Vector3.ZERO
 var shooter = null      # pilot: odłamki liczą obrażenia jak jego pociski
 var plane = null        # samolot, z którego spadła (pomijany na początku lotu)
 var _t := 0.0
+# siła wybuchu (rakieta RPG nadpisuje: mniejszy promień, mniej odłamków)
+var kill_r := KILL_R
+var stun_r := STUN_R
+var plane_r := PLANE_R
+var frags := FRAGS
+var blast := 1.3
 
 
 static func frag_gun() -> Frag:
@@ -110,7 +116,7 @@ func _physics_process(dt: float) -> void:
 
 
 func _explode(pos: Vector3) -> void:
-	FX.I.explosion(pos, 1.3)
+	FX.I.explosion(pos, blast)
 	FX.I.crater(pos)
 	var sh = shooter if (shooter != null and is_instance_valid(shooter)) else null
 	var my_bomb: bool = not Player.net_on or (sh != null and sh.get("is_remote") == false)
@@ -120,11 +126,14 @@ func _explode(pos: Vector3) -> void:
 			continue
 		var c: Vector3 = s.chest_pos()
 		var d := c.distance_to(pos)
-		if d < KILL_R:
+		if d < kill_r:
+			if sh != null and sh != s:
+				s.last_shooter = sh      # zabójstwo zaliczone strzelcowi / pilotowi
+				s.last_hit_seg = "torso"
 			s.vitals._die()
 			s._collapse((c - pos).normalized(), c, "torso", 6000.0, true)
-		elif d < STUN_R:
-			s.vitals.blunt(clampf((STUN_R - d) / STUN_R, 0.1, 1.0))
+		elif d < stun_r:
+			s.vitals.blunt(clampf((stun_r - d) / stun_r, 0.1, 1.0))
 	for p in get_tree().get_nodes_in_group("player"):
 		var dp: float = p.global_position.distance_to(pos)
 		if dp < 80.0:
@@ -133,11 +142,11 @@ func _explode(pos: Vector3) -> void:
 	if my_bomb:
 		for pl in get_tree().get_nodes_in_group("plane"):
 			var dpl: float = pl.global_position.distance_to(pos)
-			if dpl < PLANE_R and not pl.destroyed:
-				pl._damage((PLANE_R - dpl) * 22.0)
+			if dpl < plane_r and not pl.destroyed:
+				pl._damage((plane_r - dpl) * 22.0)
 	# odłamki: zwykłe pociski z balistyki (rozchodzą się głównie w bok i w górę)
 	var origin := pos + Vector3.UP * 0.4
-	for i in FRAGS:
+	for i in frags:
 		var dir := Vector3(randfn(0.0, 1.0), absf(randfn(0.0, 0.5)) + 0.05, randfn(0.0, 1.0)).normalized()
 		Ballistics.I.fire(sh, frag_gun(), origin, dir, false)
 	queue_free()

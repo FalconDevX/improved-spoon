@@ -15,6 +15,9 @@ var spawn_player := Vector3(25, 0, 4.5)   # lotnisko, między myśliwcami
 # skrzynki z amunicją: lotnisko, wieś, kompleks, farma, sad, pola i drogi na północy i południu
 var ammo_spots := [Vector3(20, 0, 10), Vector3(-10, 0, -2), Vector3(-30, 0, -40), Vector3(60, 0, -30),
 	Vector3(-62, 0, 34), Vector3(-70, 0, -52), Vector3(-6, 0, 70), Vector3(40, 0, 60), Vector3(-8, 0, -95)]
+# apteczki: lotnisko, wieś (dwie), kompleks, farma, sad, północ, południe
+var med_spots := [Vector3(22, 0, -6), Vector3(4, 0, 6), Vector3(-24, 0, 14), Vector3(70, 0, -46),
+	Vector3(-74, 0, 46), Vector3(-80, 0, -62), Vector3(-14, 0, 80), Vector3(6, 0, -88)]
 var posts: Array = []             # miejsca, w których startują oddziały wroga
 var road_img: Image              # maska dróg 256 × 256 na całą mapę (trawa, minimapa)
 var ground_body: StaticBody3D

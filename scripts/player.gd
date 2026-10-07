@@ -2,7 +2,7 @@ extends "res://scripts/soldier.gd"
 ## Gracz: ruch, widok z pierwszej osoby (broń po prawej, PPM — celowanie przez kolimator / lunetę)
 ## albo zza ramienia [V], laser [L], odrzut, kołysanie broni (oddech, zmęczenie, ból, utrata krwi),
 ## wstrzymanie oddechu, trzynaście broni, magazynki, tryby ognia, opatrunki, zbieranie amunicji,
-## samoloty (wsiadanie [E], sterowanie przejmuje plane.gd).
+## samoloty (wsiadanie [F], sterowanie przejmuje plane.gd).
 
 const WALK := 1.6
 const JOG := 3.6
@@ -11,7 +11,7 @@ const CROUCH := 1.4
 const ADS_SPEED := 1.5
 const ACCEL := 10.0
 const MOUSE_SENS := 0.0022
-const LOADOUT := ["m4", "ak", "aug", "mp9", "r870", "m24", "glock", "deagle", "ak74", "uzi", "sawed", "awm", "m686"]
+const LOADOUT := ["m4", "ak", "aug", "mp9", "r870", "m24", "glock", "deagle", "ak74", "rpg", "uzi", "sawed", "awm", "m686"]
 const OWN_LAYER := 1 << 10    # warstwa obrazu własnego ciała (niewidoczna z pierwszej osoby; 2 = ciała dla decali krwi)
 
 var guns: Array = []
@@ -89,7 +89,7 @@ func _ready() -> void:
 	_equip_i(0, true)
 	if net_on:
 		var gd := _gd()
-		for f in [net_state, net_shot, net_down, net_hit]:
+		for f in [net_state, net_shot, net_down, net_hit, net_grenade]:
 			gd.expose_func(f)
 	_yaw = rotation.y
 	rotation.y = 0.0
@@ -170,6 +170,8 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e.is_action_pressed("use"):
 		if not _board_plane():
 			_loot()
+	elif e.is_action_pressed("grenade"):
+		_throw_grenade()
 	elif e.is_action_pressed("view_toggle"):
 		first_person = not first_person
 	elif e.is_action_pressed("laser"):
@@ -238,7 +240,7 @@ func _loot() -> void:
 				FX.I.play("bolt", global_position + Vector3(0, 1.0, 0), -8.0, 0.05, 1.2)
 				_msg(r)
 			else:
-				_msg("Skrzynka pusta — odnowi się za %d s" % ceili(c.cooldown))
+				_msg("%s pusta — odnowi się za %d s" % ["Apteczka" if c.kind == "med" else "Skrzynka", ceili(c.cooldown)])
 			return
 	var got := 0
 	for rb in get_tree().get_nodes_in_group("dropped_gun"):
@@ -338,6 +340,7 @@ func _movement(dt: float) -> void:
 	rig.vel = visual.global_basis.inverse() * velocity
 	yaw = atan2(-_move.x, -_move.z) if rig.sprint else _yaw
 	visual.rotation.y = lerp_angle(visual.rotation.y, yaw, 1.0 - exp(-(16.0 if aiming else 11.0) * dt))
+	_tick_lean(dt)
 
 
 func _fire_logic() -> void:
@@ -391,9 +394,11 @@ func _process(dt: float) -> void:
 	_yaw -= rec.y
 	ads = move_toward(ads, 1.0 if (aiming and not down) else 0.0, rd * 4.5)
 	var cam_base := global_position + Vector3(0, 1.62 - 0.52 * rig._crouch_s, 0)
+	# wychylenie: oczy idą w bok razem z głową (ciało przechyla się od bioder)
+	cam_base += Basis(Vector3.UP, _yaw) * Vector3(lean * LEAN_SIDE, -absf(lean) * 0.06, 0)
 	_cam_yaw.global_position = _cam_yaw.global_position.lerp(cam_base, 1.0 - exp(-18.0 * rd))
 	_cam_yaw.rotation = Vector3(0, _yaw, 0)
-	_cam_pitch.rotation = Vector3(_pitch, 0, 0)
+	_cam_pitch.rotation = Vector3(_pitch, 0, -lean * LEAN_CAM_ROLL)
 	_sway_t += rd
 	var sway_amp := 0.0012 + (100.0 - stamina) * 0.00004 + vitals.pain * 0.004 + vitals.lost() * 0.012
 	if gun:
@@ -677,7 +682,7 @@ func _net_send(dt: float) -> void:
 		return
 	_net_t = NET_RATE
 	_gd().call_func_unreliable(net_state, global_position, velocity, visual.rotation.y, rig.aim_dir, rig.aim_w,
-		rig.crouch, rig.sprint, rig.air, gun_i, rig.reload_p, rig.reload_kind)
+		rig.crouch, rig.sprint, rig.air, gun_i, rig.reload_p, rig.reload_kind, lean)
 
 
 func _eject_from(g: Node3D) -> Node3D:
@@ -733,9 +738,10 @@ func _net_forward_hit(h: Dictionary) -> void:
 
 ## (kukiełka) stan przeciwnika ~30 razy na sekundę.
 func net_state(p: Vector3, v: Vector3, vyaw: float, aim: Vector3, aim_w: float, crouch: float, sprint: bool,
-		air: bool, gi: int, reload_p: float, reload_kind: String) -> void:
+		air: bool, gi: int, reload_p: float, reload_kind: String, lean_v := 0.0) -> void:
 	if not is_remote or down:
 		return
+	_net_lean = lean_v
 	_net_pos = p
 	_net_vel = v
 	_yaw = vyaw
@@ -754,7 +760,7 @@ func net_state(p: Vector3, v: Vector3, vyaw: float, aim: Vector3, aim_w: float, 
 func net_shot(origin: Vector3, dir: Vector3, tracer: bool) -> void:
 	if not is_remote or down or gun == null:
 		return
-	Ballistics.I.fire(self, gun, origin, dir, tracer)
+	fire_projectile(gun, origin, dir, tracer)
 	gun.flash()
 	_shot_fx(gun, origin, dir)
 	FX.I.play(gun.data["sound"], origin, 4.0, 0.06, 1.0, 40.0)
@@ -796,6 +802,8 @@ func _net_follow(dt: float) -> void:
 		global_position = global_position.lerp(target, 1.0 - exp(-14.0 * dt))
 	velocity = _net_vel
 	visual.rotation.y = lerp_angle(visual.rotation.y, _yaw, 1.0 - exp(-16.0 * dt))
+	lean = move_toward(lean, _net_lean, dt * 6.0)
+	visual.rotation.z = -lean * LEAN_ROLL
 	rig.vel = visual.global_basis.inverse() * velocity
 	yaw = _yaw
 
@@ -859,3 +867,69 @@ func vehicle_death() -> void:
 	vitals._die()
 	_note("katastrofa lotnicza", [])
 	_collapse(Vector3.UP, chest_pos(), "torso", 4000.0, true)
+
+
+# ---------------------------------------------------------------- wychylanie (Q / E) i granaty (G)
+
+const LEAN_SIDE := 0.34        # o ile oczy idą w bok przy pełnym wychyleniu [m]
+const LEAN_ROLL := 0.2         # przechył ciała od bioder [rad]
+const LEAN_CAM_ROLL := 0.1     # przechył kamery [rad]
+const MAX_GRENADES := 4
+const THROW_SPEED := 15.0
+
+var lean := 0.0                # -1 lewo .. 1 prawo
+var grenades := 2
+var _net_lean := 0.0
+var _throw_cd := 0.0
+
+
+func _tick_lean(dt: float) -> void:
+	_throw_cd = maxf(_throw_cd - dt, 0.0)
+	var want := 0.0
+	if not rig.sprint and not down:
+		want = Input.get_action_strength("lean_right") - Input.get_action_strength("lean_left")
+	# nie wychylaj głowy w ścianę: promień w bok z wysokości oczu
+	if absf(want) > 0.01:
+		var side := Basis(Vector3.UP, _yaw) * Vector3(signf(want), 0, 0)
+		var eye := global_position + Vector3(0, 1.55 - 0.5 * rig._crouch_s, 0)
+		var q := PhysicsRayQueryParameters3D.create(eye, eye + side * (LEAN_SIDE + 0.25), 1)
+		var r := get_world_3d().direct_space_state.intersect_ray(q)
+		if not r.is_empty():
+			var room := maxf(eye.distance_to(r["position"]) - 0.25, 0.0)
+			want = signf(want) * minf(absf(want), room / LEAN_SIDE)
+	lean = move_toward(lean, want, dt * 5.0)
+	visual.rotation.z = -lean * LEAN_ROLL
+
+
+## Rzut granatem łukiem w kierunku celownika (lekko w górę).
+func _throw_grenade() -> void:
+	if down or grenades <= 0 or _throw_cd > 0.0 or vehicle:
+		if grenades <= 0:
+			_msg("Brak granatów — skrzynka z amunicją [F]")
+		return
+	grenades -= 1
+	_throw_cd = 1.0
+	_switch_t = maxf(_switch_t, 0.6)   # broń na chwilę w dół (ręka rzuca)
+	var dir := (_cam.global_basis * _aim_local).normalized()
+	var origin := _cam.global_position + dir * 0.5 + Vector3.DOWN * 0.15
+	var v := (dir + Vector3.UP * 0.25).normalized() * THROW_SPEED + velocity
+	_spawn_grenade(origin, v)
+	FX.I.play("click", origin, -8.0, 0.1, 0.7)
+	_msg("Granat! (zostało %d)" % grenades)
+	if net_on and not is_remote:
+		_gd().call_func(net_grenade, origin, v)
+
+
+func _spawn_grenade(origin: Vector3, v: Vector3) -> void:
+	var g = load("res://scripts/grenade.gd").new()
+	g.vel = v
+	g.shooter = self
+	get_parent().add_child(g)
+	g.global_position = origin
+
+
+## (kukiełka) przeciwnik rzucił granat: ten sam granat leci u mnie (wybuch liczy każdy komputer dla swoich).
+func net_grenade(origin: Vector3, v: Vector3) -> void:
+	if not is_remote or down:
+		return
+	_spawn_grenade(origin, v)

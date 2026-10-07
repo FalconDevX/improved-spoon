@@ -20,6 +20,7 @@ const CAL := {
 	"338lm": {"name": ".338 Lapua Magnum", "mass": 0.0162, "k": 0.0005, "pen": 0.9, "cavity": 0.013, "frag_v": 0.0, "yaw_depth": 0.2, "armor": 4, "tracer": false},
 	"12.7x99": {"name": "12,7×99 mm (.50 BMG) M2", "mass": 0.042, "k": 0.00042, "pen": 1.7, "cavity": 0.03, "frag_v": 0.0, "yaw_depth": 0.25, "armor": 5, "tracer": true},
 	"frag": {"name": "odłamek bomby", "mass": 0.003, "k": 0.02, "pen": 0.24, "cavity": 0.007, "frag_v": 0.0, "armor": 3, "tracer": false},
+	"pg7v": {"name": "PG-7V (rakieta kumulacyjna)", "mass": 2.2, "k": 0.0, "pen": 0.5, "cavity": 0.01, "frag_v": 0.0, "armor": 4, "tracer": false},
 	"12ga": {"name": "12/70 śrut 00 Buck (9 × 8,4 mm)", "mass": 0.0035, "k": 0.0044, "pen": 0.32, "cavity": 0.0045, "frag_v": 0.0, "armor": 2, "pellets": 9, "pellet_spread": 0.011, "tracer": false},
 }
 
@@ -100,6 +101,12 @@ const DB := {
 		"kind": "rifle", "weight": 2.6, "ads_fov": 55.0, "sound": "shot_12",
 		"grip": Vector2(0.0, -0.05), "support": Vector2(1.8, 0.15), "butt": Vector2(-0.38, -0.3),
 		"muzzle": Vector2(3.29, 0.4), "sight": Vector2(0.6, 0.53)},
+	"rpg": {"name": "RPG-7", "model": "rpg", "proc": "rpg", "length": 1.075, "cal": "pg7v", "v0": 115.0,
+		"rpm": 0.0, "modes": ["semi"], "cap": 1, "mags": 6, "feed": "tube", "rocket": true,
+		"reload": 2.6, "reload_empty": 2.6, "spread": 0.0025, "recoil": [0.02, 0.006, 0.03], "zero": 100.0,
+		"kind": "rifle", "weight": 7.0, "ads_fov": 50.0, "sound": "shot_50",
+		"grip": Vector2(0.0, 0.0), "support": Vector2(0.24, 0.0), "butt": Vector2(-0.45, 0.075),
+		"muzzle": Vector2(0.53, 0.075), "sight": Vector2(0.05, 0.16)},
 	"awm": {"name": "AI AWM .338", "model": "SniperRifle_3", "length": 1.2, "cal": "338lm", "v0": 900.0,
 		"rpm": 0.0, "cycle": 1.3, "modes": ["bolt"], "cap": 5, "mags": 20, "feed": "tube",
 		"reload": 0.65, "reload_empty": 0.65, "spread": 0.00015, "recoil": [0.04, 0.008, 0.08], "zero": 300.0,
@@ -135,7 +142,7 @@ func setup(wid: String) -> void:
 	id = wid
 	data = DB[wid]
 	cal = CAL[data["cal"]]
-	var mesh := load("res://assets/weapons/%s.obj" % data["model"]) as Mesh
+	var mesh: Mesh = _proc_mesh(data["proc"]) if data.has("proc") else load("res://assets/weapons/%s.obj" % data["model"]) as Mesh
 	var bb := mesh.get_aabb()
 	scale_k = float(data["length"]) / bb.size.x
 	mesh_node = MeshInstance3D.new()
@@ -144,6 +151,8 @@ func setup(wid: String) -> void:
 	mesh_node.transform.origin = -_raw(data["grip"])
 	add_child(mesh_node)
 	_fix_materials(mesh)
+	if data.get("rocket", false):
+		_build_warhead()
 	_build_flash()
 	rounds = int(data["cap"])
 	chambered = data["feed"] == "mag"
@@ -162,6 +171,8 @@ static var _mat_cache := {}
 ## Kolory z plików .mtl są liniowe (Blender), a importer bierze je jako sRGB -> broń wychodzi
 ## smoliście czarna. Przeliczenie do sRGB + metal / drewno / polimer.
 func _fix_materials(mesh: Mesh) -> void:
+	if data.has("proc"):
+		return   # własne materiały (już w sRGB)
 	for i in mesh.get_surface_count():
 		var src := mesh.surface_get_material(i) as StandardMaterial3D
 		if src == null:
@@ -283,6 +294,82 @@ func finish_reload() -> bool:
 
 
 ## Zabiera naboje z innej broni tego samego kalibru (podnoszenie amunicji).
+static var _proc_cache := {}
+var _warhead: Node3D
+
+
+## Głowica rakiety wystająca z wylotu — znika po strzale, wraca po przeładowaniu.
+func _build_warhead() -> void:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.28, 0.32, 0.2)
+	mat.roughness = 0.6
+	_warhead = Node3D.new()
+	_warhead.position = anchor("muzzle")
+	add_child(_warhead)
+	var fwd := Basis(Vector3.RIGHT, -PI * 0.5)   # oś Y walca -> -Z (do przodu)
+	var cone := MeshInstance3D.new()
+	cone.mesh = _cyl(0.0, 0.055, 0.3)
+	cone.material_override = mat
+	cone.transform = Transform3D(fwd, Vector3(0, 0, -0.27))
+	_warhead.add_child(cone)
+	var back := MeshInstance3D.new()
+	back.mesh = _cyl(0.055, 0.03, 0.12)
+	back.material_override = mat
+	back.transform = Transform3D(fwd, Vector3(0, 0, -0.06))
+	_warhead.add_child(back)
+
+
+## Broń bez modelu w paczce (RPG-7): bryły złożone w jedną siatkę, oś lufy wzdłuż +X (metry),
+## początek = chwyt pistoletowy — ta sama konwencja co modele OBJ.
+static func _proc_mesh(kind: String) -> Mesh:
+	if _proc_cache.has(kind):
+		return _proc_cache[kind]
+	var olive := StandardMaterial3D.new()
+	olive.albedo_color = Color(0.28, 0.32, 0.2)
+	olive.roughness = 0.6
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.24, 0.16, 0.1)
+	wood.roughness = 0.7
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.12, 0.12, 0.12)
+	steel.metallic = 0.7
+	steel.roughness = 0.4
+	var am := ArrayMesh.new()
+	var along_x := Basis(Vector3.BACK, -PI * 0.5)   # oś Y walca -> oś X
+	var parts := [
+		# [mesh, transform, material]
+		[_cyl(0.042, 0.042, 0.95), Transform3D(along_x, Vector3(0.05, 0.075, 0)), steel],     # rura
+		[_cyl(0.045, 0.06, 0.16), Transform3D(along_x, Vector3(-0.47, 0.075, 0)), steel],     # tylny lej (dysza)
+		[_cyl(0.05, 0.05, 0.3), Transform3D(along_x, Vector3(0.0, 0.075, 0)), wood],          # osłona drewniana
+		[_box(Vector3(0.035, 0.11, 0.03)), Transform3D(Basis(Vector3.BACK, 0.25), Vector3(0.0, -0.03, 0)), steel],   # chwyt
+		[_box(Vector3(0.035, 0.1, 0.03)), Transform3D(Basis(Vector3.BACK, 0.15), Vector3(0.24, -0.02, 0)), steel],  # przedni chwyt
+		[_box(Vector3(0.04, 0.05, 0.012)), Transform3D(Basis(), Vector3(0.05, 0.135, 0)), steel],    # celownik
+	]
+	for prt: Array in parts:
+		var st := SurfaceTool.new()
+		st.append_from(prt[0], 0, prt[1])
+		st.commit(am)
+		am.surface_set_material(am.get_surface_count() - 1, prt[2])
+	_proc_cache[kind] = am
+	return am
+
+
+static func _cyl(top: float, bottom: float, h: float) -> Mesh:
+	var c := CylinderMesh.new()
+	c.top_radius = top
+	c.bottom_radius = bottom
+	c.height = h
+	c.radial_segments = 16
+	c.rings = 1
+	return c
+
+
+static func _box(size: Vector3) -> Mesh:
+	var b := BoxMesh.new()
+	b.size = size
+	return b
+
+
 ## Pełny zapas (skrzynka z amunicją). Zwraca liczbę dodanych naboi.
 func refill() -> int:
 	var before := total_ammo()
@@ -330,6 +417,8 @@ func take_ammo_from(other) -> int:
 
 func _process(delta: float) -> void:
 	cycle_t = maxf(cycle_t - delta, 0.0)
+	if _warhead:
+		_warhead.visible = rounds > 0
 	if _laser_emit:
 		_update_laser()
 	if _flash_t > 0.0:
