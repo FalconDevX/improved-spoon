@@ -14,7 +14,6 @@ var cooldown := 0.0
 var _lid: MeshInstance3D
 var _lid_ready: StandardMaterial3D
 var _lid_empty: StandardMaterial3D
-var _label: Label3D
 
 
 func _ready() -> void:
@@ -84,19 +83,6 @@ func _ready() -> void:
 		t.position = Vector3(-0.08, size.y * 0.42, side * (size.z * 0.5 + 0.006))
 		t.rotation.y = 0.0 if side > 0.0 else PI
 		add_child(t)
-	# pływający znacznik nad skrzynką (widać z daleka)
-	_label = Label3D.new()
-	_label.text = "▼ APTECZKA" if med else "▼ AMUNICJA"
-	_label.font_size = 32
-	_label.pixel_size = 0.0007
-	_label.fixed_size = true        # ta sama wielkość na ekranie z bliska i z daleka
-	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_label.no_depth_test = false
-	_label.modulate = Color(1.0, 0.35, 0.3, 0.95) if med else Color(1.0, 0.85, 0.3, 0.9)
-	_label.outline_modulate = Color(0, 0, 0, 0.7)
-	_label.outline_size = 8
-	_label.position.y = 1.25
-	add_child(_label)
 
 
 func is_ready() -> bool:
@@ -131,7 +117,6 @@ func resupply(player) -> String:
 func _use() -> void:
 	cooldown = COOLDOWN * (1.35 if kind == "med" else 1.0)
 	_lid.material_override = _lid_empty
-	_label.visible = false
 
 
 func _process(dt: float) -> void:
@@ -139,7 +124,3 @@ func _process(dt: float) -> void:
 		cooldown -= dt
 		if cooldown <= 0.0:
 			_lid.material_override = _lid_ready
-			_label.visible = true
-	# znacznik lekko pulsuje
-	if _label.visible:
-		_label.position.y = 1.25 + sin(Time.get_ticks_msec() * 0.003) * 0.08

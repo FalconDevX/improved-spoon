@@ -468,7 +468,11 @@ func _spawn_crates() -> void:
 	var spots: Array = _level.ammo_spots + _level.med_spots
 	for i in spots.size():
 		var want: Vector3 = spots[i]
+		# siatka nawigacyjna przesuwa skrzynkę z dala od ścian; zanim się zsynchronizuje, zwraca (0, 0, 0)
+		# — wtedy wszystkie skrzynki lądowały w jednym miejscu, jedna na drugiej
 		var p := NavigationServer3D.map_get_closest_point(map, want)
+		if Vector2(p.x - want.x, p.z - want.z).length() > 4.0:
+			p = want
 		var c := AmmoCrate.new()
 		var med: bool = i >= _level.ammo_spots.size()
 		c.kind = "med" if med else "ammo"
