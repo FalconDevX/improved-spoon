@@ -375,7 +375,7 @@ func _physics_process(dt: float) -> void:
 	var gas := 0.0
 	var turn := 0.0
 	var hand := false
-	if _local_pilot():
+	if _local_pilot() and not Player.chat_open:
 		gas = Input.get_axis("move_back", "move_forward")
 		turn = Input.get_axis("move_right", "move_left")
 		hand = Input.is_action_pressed("jump")

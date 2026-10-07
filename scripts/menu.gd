@@ -315,7 +315,7 @@ func _page_controls() -> Control:
 	cols.add_child(_keys("ŚMIGŁOWIEC", [
 		["Mysz", "kierunek i celowanie"], ["Spacja / Ctrl", "w górę / w dół"], ["W / S", "do przodu / do tyłu"], ["A / D", "w bok"],
 		["LPM", "działko 12,7 mm"], ["PPM", "rakiety"], ["C", "flary"], ["V", "kabina / z tyłu"], ["F", "wysiądź (na ziemi)"],
-		["", ""], ["M", "mapa, LPM — waypoint"], ["F1", "pomoc w grze"], ["F2", "filtr kolorów"], ["Esc", "pauza"]]))
+		["", ""], ["M", "mapa, LPM — waypoint"], ["Enter", "czat"], ["F1", "pomoc w grze"], ["F2", "filtr kolorów"], ["Esc", "pauza"]]))
 	v.add_child(cols)
 	v.add_child(_button("‹  WSTECZ", "", func(): show_page("main")))
 	return v

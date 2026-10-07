@@ -287,6 +287,14 @@ func _physics_process(dt: float) -> void:
 	if para > 0:
 		_tick_para(dt)
 		return
+	if chat_open:
+		# pisanie na czacie: żołnierz stoi (grawitacja działa)
+		_move = Vector3.ZERO
+		velocity.x = 0.0
+		velocity.z = 0.0
+		velocity.y = -0.5 if is_on_floor() else velocity.y - GRAVITY * dt
+		move_and_slide()
+		return
 	_tick_weapon(dt)
 	_switch_t = maxf(_switch_t - dt, 0.0)
 	if bandaging >= 0.0:
@@ -497,7 +505,7 @@ func _build_vm() -> void:
 func _place_vm(rd: float) -> void:
 	if _vm == null:
 		return
-	_vm.visible = first_person and not down and not scoped()
+	_vm.visible = first_person and not down and not scoped() and vehicle == null
 	if not _vm.visible:
 		return
 	_vm_pivot.basis = Basis.looking_at(_aim_local, Vector3.UP)
@@ -673,6 +681,7 @@ func _tick_kills(dt: float) -> void:
 const NET_RATE := 1.0 / 30.0
 
 static var net_on := false
+static var chat_open := false  # piszę na czacie [Enter]: klawisze nie sterują żołnierzem / maszyną
 var net_id := 0
 var is_remote := false
 var deaths := 0               # ile razy zginąłem

@@ -692,7 +692,7 @@ func _simulate(dt: float) -> void:
 	stall = not on_ground and absf(aoa) > STALL_AOA and v > 5.0
 	var ctrl := _controls(b, aoa, dt)
 	var local := _local_pilot()
-	if local:
+	if local and not Player.chat_open:
 		throttle = clampf(throttle + Input.get_axis("move_back", "move_forward") * 0.6 * dt, 0.0, 1.0)
 	elif _ai_on():
 		throttle = move_toward(throttle, ai.throttle, 0.6 * dt)
@@ -751,7 +751,7 @@ func _arcade(dt: float) -> void:
 	var target := V_MIN + (V_MAX - V_MIN) * throttle * eng
 	spd = move_toward(spd, target, THRUST * 0.45 * dt)
 	spd = maxf(spd - fwd.y * GRAVITY * 0.55 * dt, 18.0)
-	if _local_pilot():
+	if _local_pilot() and not Player.chat_open:
 		_aim_yaw -= Input.get_axis("move_left", "move_right") * 0.7 * dt   # A/D — lekki skręt
 	_aim_s = _aim_s.slerp(aim_dir(), 1.0 - exp(-AIM_SMOOTH * 1.5 * dt)).normalized()
 	var want := _aim_s
@@ -790,7 +790,7 @@ func _controls(b: Basis, aoa: float, dt: float) -> Vector3:
 			return Vector3.ZERO
 		return Vector3(0.0, 0.0, -atan2(b.x.y, b.y.y) * 0.5 if not on_ground else 0.0)
 	var man := Vector3.ZERO
-	if _local_pilot():
+	if _local_pilot() and not Player.chat_open:
 		man = Vector3(Input.get_axis("stick_up", "stick_down"), Input.get_axis("move_left", "move_right"),
 			Input.get_axis("stick_left", "stick_right"))
 	var right := b.x
@@ -883,7 +883,7 @@ func _ground(dt: float, ctrl: Vector3) -> void:
 	var vf := velocity.dot(flat)
 	var side := velocity - flat * vf
 	side.y = 0.0
-	var brake := _local_pilot() and Input.is_action_pressed("jump")
+	var brake := _local_pilot() and not Player.chat_open and Input.is_action_pressed("jump")
 	vf = move_toward(vf, 0.0, (0.3 + (6.0 if brake else 0.0) + (0.6 if pilot == null else 0.0)) * dt)
 	side = side.move_toward(Vector3.ZERO, 18.0 * dt)
 	velocity = flat * vf + side + Vector3(0, velocity.y, 0)

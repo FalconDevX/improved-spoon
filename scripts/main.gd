@@ -16,6 +16,7 @@ const C130 = preload("res://scripts/c130.gd")
 const Car = preload("res://scripts/car.gd")
 const AA = preload("res://scripts/aa.gd")
 const BigMap = preload("res://scripts/bigmap.gd")
+const Chat = preload("res://scripts/chat.gd")
 const AmmoCrate = preload("res://scripts/ammo_crate.gd")
 const Clouds = preload("res://scripts/clouds.gd")
 const Grass = preload("res://scripts/grass.gd")
@@ -31,6 +32,7 @@ const MAX_CORPSES := 6
 
 var _level: Level
 var waypoint := Vector3.INF      # punkt nawigacyjny z mapy [M]
+var chat                         # czat [Enter] (chat.gd)
 var _player: Node3D
 var _hud
 var _xray := false
@@ -316,6 +318,18 @@ func _ask_bots() -> void:
 		get_node("/root/GDSync").call_func(net_want_bots)
 
 
+## Czat: moja wiadomość do drugiego gracza.
+func send_chat(text: String) -> void:
+	if Player.net_on and _match_started:
+		get_node("/root/GDSync").call_func(net_chat, text)
+
+
+## (zdalnie) wiadomość od drugiego gracza.
+func net_chat(text: String) -> void:
+	if chat:
+		chat.add(("Gość" if _pvp_host else "Host") + ": " + text, Color(0.6, 0.85, 1.0))
+
+
 ## (host) gość prosi o listę botów.
 func net_want_bots() -> void:
 	if _pvp_host:
@@ -543,6 +557,10 @@ func _make_hud(player: Node) -> void:
 	mm.main = self
 	mm.level = _level
 	layer.add_child(mm)
+	chat = Chat.new()
+	chat.theme = UiTheme.hud()
+	chat.main = self
+	layer.add_child(chat)
 	var bm := BigMap.new()
 	bm.theme = UiTheme.hud()
 	bm.main = self
@@ -593,6 +611,8 @@ func _setup_input() -> void:
 	_key("grenade", KEY_G)
 	_key("flares", KEY_C)
 	_key("map", KEY_M)
+	_key("chat", KEY_ENTER)
+	InputMap.action_add_event("chat", _keyev(KEY_KP_ENTER))
 	_key("walk_toggle", KEY_X)
 	_key("xray", KEY_TAB)
 	_key("restart", KEY_F5)
@@ -620,6 +640,12 @@ func _key(action: String, key: Key) -> void:
 	var e := InputEventKey.new()
 	e.physical_keycode = key
 	InputMap.action_add_event(action, e)
+
+
+func _keyev(key: Key) -> InputEventKey:
+	var e := InputEventKey.new()
+	e.physical_keycode = key
+	return e
 
 
 func _mouse(action: String, button: MouseButton) -> void:
@@ -857,7 +883,7 @@ func _start_pvp(online: bool, host: bool, code: String) -> void:
 		gd.client_joined.connect(_on_client_joined)
 		gd.client_left.connect(_on_client_left)
 		gd.disconnected.connect(func(): _set_status("Rozłączono z GD-Sync."))
-	for f in [net_respawn, net_want_bots, net_bots_spawn, net_bots_state, net_bot_shot, net_bot_down, net_bot_hit, net_restart]:
+	for f in [net_chat, net_respawn, net_want_bots, net_bots_spawn, net_bots_state, net_bot_shot, net_bot_down, net_bot_hit, net_restart]:
 		gd.expose_func(f)
 	_set_status("Łączenie (%s)..." % ("online" if online else "lokalnie"))
 	if online:
@@ -1037,6 +1063,8 @@ func _on_client_joined(id: int) -> void:
 	# pozycję poprawi pierwszy pakiet stanu
 	_make_net_player(id, true, _level.posts[9] if _pvp_host else _level.posts[11])
 	_set_status("Przeciwnik dołączył")
+	if chat:
+		chat.add("Drugi gracz dołączył do gry", Color(1, 0.85, 0.4))
 	if _pvp_host:
 		_send_bots(get_tree().get_nodes_in_group("npc"), id)
 

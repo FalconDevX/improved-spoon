@@ -538,7 +538,7 @@ func _simulate(dt: float) -> void:
 	var side := 0.0
 	var up := 0.0
 	var live: bool = pilot != null and is_instance_valid(pilot) and not pilot.down and hp > 0.0
-	if live and _local_pilot():
+	if live and _local_pilot() and not Player.chat_open:
 		fwd = Input.get_axis("move_back", "move_forward")
 		side = Input.get_axis("move_left", "move_right")
 		up = (1.0 if Input.is_action_pressed("jump") else 0.0) - (1.0 if Input.is_action_pressed("crouch") else 0.0)
