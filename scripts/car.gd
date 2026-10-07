@@ -210,7 +210,7 @@ func board(p) -> void:
 		_gd().call_func(net_board, p.net_id)
 	_cam_yaw = global_rotation.y
 	_cam.current = true
-	cockpit_view = false
+	cockpit_view = true
 	p._msg("W/S — gaz / hamulec, A/D — skręt, Spacja — ręczny, V — widok, F — wysiądź")
 
 

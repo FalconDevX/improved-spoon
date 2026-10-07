@@ -20,7 +20,7 @@ const LAYER := 32
 const GRAVITY := 9.81
 var GEAR_H := 1.55                       # od osi kadłuba do spodu kół
 var SEAT := Vector3(0, -0.42, 0.6)       # stopy pilota (pozycja gracza) w układzie samolotu
-var EYE := Vector3(0, 0.86, 0.5)         # oczy pilota w kabinie
+var EYE := Vector3(0, 0.66, 0.3)        # oczy pilota w kabinie
 var THRUST := 13.0                       # m/s² przy pełnym gazie
 const CD0 := 0.0019
 const K_LIFT := 0.012
@@ -54,7 +54,7 @@ var BOARD_R := 5.0
 var EXIT := Vector3(-2.0, 0, 0.9)          # gdzie staje wysiadający
 var CAM_DIST := 15.0                       # kamera za samolotem
 var CAM_UP := 3.2
-var GUNS := [Vector3(-2.1, -0.36, -1.75), Vector3(2.1, -0.36, -1.75), Vector3(-2.55, -0.34, -1.7), Vector3(2.55, -0.34, -1.7)]
+var GUNS := [Vector3(-2.1, -0.42, -2.2), Vector3(2.1, -0.42, -2.2), Vector3(-2.55, -0.4, -2.1), Vector3(2.55, -0.4, -2.1)]
 const RESPAWN := 25.0
 const BOUND := 1400.0
 const MOUSE_SENS := 0.0019
@@ -63,6 +63,7 @@ const FLARES := 4                          # salwy flar
 const FLARE_RELOAD := 12.0                 # po zużyciu wszystkich: przeładowanie w powietrzu [s]
 const FLARE_CD := 0.8
 const Flare = preload("res://scripts/flare.gd")
+const MODEL = preload("res://assets/vehicles/spitfire.glb")
 
 
 class MG:
@@ -167,8 +168,8 @@ func _ready() -> void:
 
 ## Kolizja kadłuba, skrzydeł i usterzenia (prostopadłościany: rozmiar, środek).
 func _collision_boxes() -> Array:
-	return [[Vector3(1.3, 1.35, 8.4), Vector3(0, 0, 0.6)], [Vector3(10.8, 0.3, 2.1), Vector3(0, -0.45, -0.95)],
-		[Vector3(3.6, 0.2, 1.1), Vector3(0, 0.15, 5.1)]]
+	return [[Vector3(1.2, 1.45, 9.0), Vector3(0, 0, 1.0)], [Vector3(11.2, 0.35, 2.4), Vector3(0, -0.4, -1.0)],
+		[Vector3(3.2, 0.2, 1.0), Vector3(0, 0.2, 5.2)]]
 
 
 func _build_collision() -> void:
@@ -246,124 +247,27 @@ func _part(mesh: Mesh, pos: Vector3, mat: Material, parent: Node3D = self, rot :
 	return mi
 
 
-func _cyl(r_front: float, r_back: float, h: float) -> CylinderMesh:
-	var c := CylinderMesh.new()
-	c.top_radius = r_back       # oś walca po obrocie o 90° wzdłuż +Z (do tyłu)
-	c.bottom_radius = r_front
-	c.height = h
-	c.radial_segments = 20
-	c.rings = 1
-	return c
-
-
-## Bryła rozpięta między dwoma czworokątnymi przekrojami (skrzydło, statecznik). Normalne na zewnątrz.
-func _loft(q0: Array, q1: Array) -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var c := Vector3.ZERO
-	for p: Vector3 in q0 + q1:
-		c += p
-	c /= 8.0
-	var faces := [q0.duplicate(), q1.duplicate()]
-	for i in 4:
-		var j := (i + 1) % 4
-		faces.append([q0[i], q0[j], q1[j], q1[i]])
-	for f: Array in faces:
-		var n := ((f[1] - f[0]) as Vector3).cross(f[2] - f[0]).normalized()
-		var fc: Vector3 = (f[0] + f[1] + f[2] + f[3]) * 0.25
-		if n.dot(fc - c) < 0.0:
-			f.reverse()
-			n = -n
-		# Godot: ściana przednia = wierzchołki zgodnie z ruchem wskazówek zegara
-		for idx in [0, 2, 1, 0, 3, 2]:
-			st.set_normal(n)
-			st.add_vertex(f[idx])
-	return st.commit()
-
-
 func _build_model() -> void:
-	var body := _mat(paint)
-	var dark := _mat(paint.darkened(0.35))
 	var metal := _mat(Color(0.18, 0.18, 0.19), 0.8, 0.35)
 	var black := _mat(Color(0.05, 0.05, 0.05), 0.2, 0.7)
-	var yellow := _mat(Color(0.9, 0.72, 0.1))
-	var red := _mat(Color(0.75, 0.08, 0.1), 0.1, 0.5)
-	var white := _mat(Color(0.92, 0.92, 0.9), 0.1, 0.5)
-	var glass := StandardMaterial3D.new()
-	glass.albedo_color = Color(0.55, 0.7, 0.8, 0.28)
-	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass.metallic = 0.6
-	glass.roughness = 0.05
 	_burnt = StandardMaterial3D.new()
 	_burnt.albedo_color = Color(0.06, 0.055, 0.05)
 	_burnt.roughness = 0.95
-	var rx := Vector3(PI * 0.5, 0, 0)
-	# kadłub, osłona silnika, stożek ogonowy, kołpak śmigła
-	_part(_cyl(0.68, 0.46, 6.4), Vector3(0, 0, 0.4), body, self, rx)
-	_part(_cyl(0.46, 0.1, 2.2), Vector3(0, 0.05, 4.7), body, self, rx)
-	_part(_cyl(0.6, 0.69, 1.6), Vector3(0, 0, -3.6), dark, self, rx)
-	_part(_cyl(0.5, 0.6, 0.05), Vector3(0, 0, -4.42), black, self, rx)
-	var sp := SphereMesh.new()
-	sp.radius = 0.28
-	sp.height = 0.8
-	_part(sp, Vector3(0, 0, -4.55), yellow, self, rx)
-	# rury wydechowe
-	for sx: float in [-1.0, 1.0]:
-		for k in 3:
-			_part(_cyl(0.05, 0.05, 0.25), Vector3(sx * 0.66, 0.15, -3.9 + k * 0.4), metal, self, Vector3(0, 0, sx * 0.5 * PI))
-	# skrzydła (zbieżne, ze wzniosem)
-	for sx: float in [-1.0, 1.0]:
-		var r_le := -2.0
-		var r_te := 0.1
-		var t_le := -1.55
-		var t_te := -0.45
-		var ry := -0.45
-		var ty := -0.2
-		var q0 := [Vector3(0, ry + 0.15, r_le), Vector3(0, ry + 0.15, r_te), Vector3(0, ry - 0.13, r_te), Vector3(0, ry - 0.13, r_le)]
-		var q1 := [Vector3(sx * 5.4, ty + 0.05, t_le), Vector3(sx * 5.4, ty + 0.05, t_te), Vector3(sx * 5.4, ty - 0.04, t_te), Vector3(sx * 5.4, ty - 0.04, t_le)]
-		_part(_loft(q0, q1), Vector3.ZERO, body)
-		# szachownica na skrzydle
-		var cx := sx * 3.7
-		var cy := lerpf(ry + 0.15, ty + 0.05, 3.7 / 5.4) + 0.012
-		var cz := lerpf(r_le, t_le, 3.7 / 5.4) + 0.55
-		var tilt := atan2(ty - ry, 5.4) * sx
-		var chk := Node3D.new()
-		chk.position = Vector3(cx, cy, cz)
-		chk.rotation.z = tilt
-		add_child(chk)
-		for ix in 2:
-			for iz in 2:
-				var bm := BoxMesh.new()
-				bm.size = Vector3(0.42, 0.01, 0.42)
-				_part(bm, Vector3((ix - 0.5) * 0.42, 0, (iz - 0.5) * 0.42), red if (ix + iz) % 2 == 0 else white, chk)
-		# lufy karabinów
-		for gi in GUNS.size():
-			var g: Vector3 = GUNS[gi]
-			if signf(g.x) == sx:
-				_part(_cyl(0.035, 0.035, 0.5), g + Vector3(0, 0, -0.2), metal, self, rx)
-	# usterzenie poziome i pionowe
-	for sx: float in [-1.0, 1.0]:
-		var q0 := [Vector3(0, 0.22, 4.55), Vector3(0, 0.22, 5.75), Vector3(0, 0.08, 5.75), Vector3(0, 0.08, 4.55)]
-		var q1 := [Vector3(sx * 1.85, 0.2, 5.0), Vector3(sx * 1.85, 0.2, 5.6), Vector3(sx * 1.85, 0.14, 5.6), Vector3(sx * 1.85, 0.14, 5.0)]
-		_part(_loft(q0, q1), Vector3.ZERO, body)
-	var f0 := [Vector3(-0.08, 0.35, 4.3), Vector3(-0.08, 0.35, 5.85), Vector3(0.08, 0.35, 5.85), Vector3(0.08, 0.35, 4.3)]
-	var f1 := [Vector3(-0.03, 1.85, 5.15), Vector3(-0.03, 1.85, 5.75), Vector3(0.03, 1.85, 5.75), Vector3(0.03, 1.85, 5.15)]
-	_part(_loft(f0, f1), Vector3.ZERO, body)
-	var fs := BoxMesh.new()
-	fs.size = Vector3(0.18, 0.5, 0.3)
-	_part(fs, Vector3(0, 1.5, 5.62), yellow)
-	# osłona kabiny i rama
-	var can := SphereMesh.new()
-	can.radius = 0.5
-	can.height = 1.0
-	var cmi := MeshInstance3D.new()
-	cmi.mesh = can
-	cmi.material_override = glass
-	cmi.position = Vector3(0, 0.5, 0.75)
-	cmi.scale = Vector3(1.0, 0.95, 2.4)
-	add_child(cmi)
+	# Supermarine Spitfire (assets/vehicles/spitfire.glb): kadłub, skrzydła, ogon, osłona kabiny, śmigło
+	var m: Node3D = MODEL.instantiate()
+	var blades: MeshInstance3D
+	for mi: MeshInstance3D in m.find_children("*", "MeshInstance3D", true, false):
+		mi.get_parent().remove_child(mi)
+		mi.owner = null
+		if mi.name == "Prop":
+			blades = mi
+			continue
+		add_child(mi)
+		if mi.name != "Canopy":
+			_parts.append(mi)
+	m.free()
 	# podwozie
-	for g in [[Vector3(-1.6, -0.55, -0.9), 0.3], [Vector3(1.6, -0.55, -0.9), 0.3], [Vector3(0, -0.6, -3.6), 0.24]]:
+	for g in [[Vector3(-0.95, -0.5, -1.35), 0.33], [Vector3(0.95, -0.5, -1.35), 0.33], [Vector3(0, -0.75, 5.2), 0.12]]:
 		var top: Vector3 = g[0]
 		var r: float = g[1]
 		var leg := BoxMesh.new()
@@ -376,23 +280,16 @@ func _build_model() -> void:
 		_part(wh, Vector3(top.x, -GEAR_H + r, top.z), black, self, Vector3(0, 0, PI * 0.5))
 	# śmigło: łopaty (wolne obroty) albo przezroczysta tarcza (szybkie)
 	_prop = Node3D.new()
-	_prop.position = Vector3(0, 0, -4.62)
+	_prop.position = Vector3(0, 0.4, -3.3)
 	add_child(_prop)
 	_blades = Node3D.new()
 	_prop.add_child(_blades)
-	for k in 3:
-		var arm := Node3D.new()
-		arm.rotation.z = TAU * k / 3.0
-		_blades.add_child(arm)
-		var bl := BoxMesh.new()
-		bl.size = Vector3(0.2, 1.45, 0.04)
-		_part(bl, Vector3(0, 0.82, 0), black, arm, Vector3(0, 0.25, 0))
-		var tip := BoxMesh.new()
-		tip.size = Vector3(0.2, 0.14, 0.045)
-		_part(tip, Vector3(0, 1.5, 0), yellow, arm, Vector3(0, 0.25, 0))
+	blades.transform = Transform3D.IDENTITY
+	_blades.add_child(blades)
+	_parts.append(blades)
 	var dm := CylinderMesh.new()
-	dm.top_radius = 1.58
-	dm.bottom_radius = 1.58
+	dm.top_radius = 1.65
+	dm.bottom_radius = 1.65
 	dm.height = 0.01
 	dm.radial_segments = 32
 	var disc_mat := StandardMaterial3D.new()
@@ -492,7 +389,7 @@ func board(p) -> void:
 	_aim_s = f
 	_ctrl = Vector3.ZERO
 	_bank_cmd = 0.0
-	cockpit_view = p.first_person
+	cockpit_view = true
 	_cam.current = true
 	_place_camera(1.0)
 	p._msg("Samolot: W/S — gaz, mysz — kierunek lotu, LPM — karabiny, F — wysiądź")
