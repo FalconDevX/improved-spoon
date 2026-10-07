@@ -29,7 +29,7 @@ var plane_spots: Array = []       # stanowiska samolotów (Transform3D, oś kad�
 var aa_spots: Array = [["gun", Vector3(8, 0, -42), 0.6], ["gun", Vector3(50, 0, 54), 2.5],
 	["sam", Vector3(110, 0, -30), -1.2], ["sam", Vector3(-4, 0, 48), 3.0]]
 # transportowiec C-130 na płycie przy hangarach (oś kadłuba 3 m nad ziemią, nosem na wschód)
-var transport_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(330, 3.0, -30))]
+var transport_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(300, 3.0, -26))]
 var no_grass: Array = []          # prostokąty (XZ) bez trawy: lądowiska
 var heli_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(26, 1.2, -30)),
 	Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(26, 1.2, -48))]

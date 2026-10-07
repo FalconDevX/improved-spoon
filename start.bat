@@ -33,11 +33,10 @@ if not defined GODOT (
     exit /b 1
 )
 
-rem pierwsze uruchomienie: import zasobow (modele, tekstury), inaczej gra nie wystartuje
-if not exist "%~dp0.godot\imported" (
-    echo Pierwsze uruchomienie - importuje zasoby gry, to potrwa chwile...
-    "%GODOT%" --headless --path "%PROJECT%" --import
-)
+rem import zasobow (modele, tekstury) przy kazdym starcie: po aktualizacji gry (git pull)
+rem nowe modele musza sie zaimportowac; gdy nic sie nie zmienilo, trwa to kilka sekund
+if not exist "%~dp0.godot\imported" echo Pierwsze uruchomienie - importuje zasoby gry, to potrwa chwile...
+"%GODOT%" --headless --path "%PROJECT%" --import
 
 if /i "%~1"=="edytor" (
     start "" "%GODOT%" --path "%PROJECT%" --editor

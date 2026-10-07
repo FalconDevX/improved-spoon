@@ -4,7 +4,7 @@ extends "res://scripts/plane.gd"
 ## wolniej się przechyla i pochyla, ma dużo więcej wytrzymałości. Bez karabinów; z luku w brzuchu
 ## zrzuca serię 8 bomb [Spacja]. Wsiada się przy drzwiach z lewej strony kabiny.
 
-const MODEL := preload("res://assets/vehicles/c130.glb")
+const MODEL_PATH := "res://assets/vehicles/c130.glb"
 
 var _len := 29.8
 
@@ -15,6 +15,9 @@ func _init() -> void:
 	PITCH_RATE = 0.55
 	ROLL_RATE = 0.9
 	YAW_RATE = 0.25
+	V_MIN = 33.0
+	V_MAX = 100.0
+	TURN_RATE = 0.5
 	MAX_HP = 420.0
 	AMMO = 0
 	BOMBS = 8
@@ -29,7 +32,26 @@ func _build_model() -> void:
 	_burnt = StandardMaterial3D.new()
 	_burnt.albedo_color = Color(0.06, 0.055, 0.05)
 	_burnt.roughness = 0.95
-	var m: Node3D = MODEL.instantiate()
+	# model z pliku (ładowany w biegu: bez zaimportowanego .glb gra i tak wystartuje — zastępczy kadłub)
+	var res: PackedScene = load(MODEL_PATH) if ResourceLoader.exists(MODEL_PATH) else null
+	var m: Node3D
+	if res:
+		m = res.instantiate()
+	else:
+		push_warning("C-130: brak zaimportowanego modelu %s — uruchom grę przez start.bat" % MODEL_PATH)
+		m = Node3D.new()
+		var box := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(4.0, 4.0, 29.8)
+		box.mesh = bm
+		box.position.y = 2.0
+		m.add_child(box)
+		var wing := MeshInstance3D.new()
+		var wm := BoxMesh.new()
+		wm.size = Vector3(40.0, 0.6, 4.0)
+		wing.mesh = wm
+		wing.position = Vector3(0, 5.5, -1.0)
+		m.add_child(wing)
 	add_child(m)
 	# wymiary i kierunek: nos (kabina, część 4) ma patrzeć w −Z, środek kadłuba w początku układu
 	var all := AABB()

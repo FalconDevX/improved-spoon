@@ -26,7 +26,7 @@ const SAFE_ALT := 70.0       # samolot nie schodzi niżej poza nalotem
 const MIN_ALT := 30.0
 const HELI_ALT := 45.0
 const CENTER := Vector2(250, 0)      # środek doliny (terrain.gd)
-const RANGE := Vector2(720, 170)     # samolot zawraca przed zboczami gór
+const RANGE := Vector2(600, 160)     # samolot zawraca przed zboczami gór
 const Terrain = preload("res://scripts/terrain.gd")
 
 
@@ -118,14 +118,17 @@ func _plane(dt: float) -> void:
 	# teren przed nosem (góry wokół doliny): za mało miejsca — w górę i do środka doliny
 	var rel := Vector2(p.x - CENTER.x, p.z - CENTER.y)
 	var ahead: Vector3 = p + craft.velocity * 4.0
-	var clear: float = minf(ahead.y - Terrain.height(ahead.x, ahead.z), p.y - Terrain.height(p.x, p.z))
-	if clear < 70.0:
+	var ground_ahead := maxf(Terrain.height(ahead.x, ahead.z), Terrain.height(p.x + craft.velocity.x * 2.0, p.z + craft.velocity.z * 2.0))
+	var clear: float = ahead.y - ground_ahead
+	if ground_ahead > 15.0 and clear < 60.0:
+		dbg = "TEREN clear=%d" % clear
 		_set_aim(Vector3(-rel.x, 0, -rel.y).normalized() * 0.6 + Vector3.UP * (1.0 if clear < 35.0 else 0.6))
 		_extend = maxf(_extend, 1.0)
 		return
 	# granica obszaru: zawróć do środka
 	if (rel / RANGE).length() > 1.0:
-		_set_aim(Vector3(-rel.x, 0, -rel.y).normalized() + Vector3.UP * (0.3 if alt < SAFE_ALT else 0.0))
+		dbg = "GRANICA rel=%s" % rel
+		_set_aim(Vector3(-rel.x, 0, -rel.y).normalized() + Vector3.UP * clampf((150.0 - alt) / 120.0, -0.35, 0.35))
 		return
 	if alt < 160.0 and craft.velocity.y < -25.0:
 		_set_aim(Vector3(nose.x, 0.8, nose.z))
@@ -139,26 +142,24 @@ func _plane(dt: float) -> void:
 	var to := tp - p
 	var dist := to.length()
 	_extend -= dt
-	if _extend > 0.0 or (_extend > -60.0 and _extending):
-		# odejście: dalej od celu i w górę, aż będzie miejsce na nowe podejście
-		_extending = (dist < 900.0 and (rel / RANGE).length() < 0.85) or _extend > 0.0
-		var away := Vector3(-to.x, 0, -to.z).normalized()
-		_set_aim(away + Vector3.UP * (0.3 if alt < 120.0 else (-0.15 if alt > 180.0 else 0.0)))
+	if _extend > 0.0:
+		# odejście po nalocie: prosto przed siebie na ~150 m, potem zawrót na cel
+		dbg = "ODEJSCIE %.1f s" % _extend
+		_set_aim(Vector3(nose.x, 0, nose.z).normalized() + Vector3.UP * clampf((150.0 - alt) / 120.0, -0.35, 0.35))
 		return
-	_extending = false
 	var aim := _lead(870.0)
 	var dir := (aim - p).normalized()
 	# nurkowanie najwyżej ~37°, a gdy za 3 s byłby za nisko — wyrwanie i odejście
 	dir = Vector3(dir.x, maxf(dir.y, -0.6), dir.z).normalized()
-	if alt + craft.velocity.y * 3.0 < 45.0 or alt < MIN_ALT:
+	if alt + craft.velocity.y * 1.5 < 35.0 or alt < 20.0:
 		_set_aim(Vector3(nose.x, 0.0, nose.z).normalized() + Vector3.UP * 0.7)
 		_extend = 3.0
-		_extending = true
 		return
 	if alt < SAFE_ALT and dir.y < -0.2 and dist > 500.0:
 		dir = Vector3(dir.x, maxf(dir.y, 0.25), dir.z).normalized()
 	_set_aim(dir)
 	var ang := nose.angle_to(aim - p)
+	dbg = "ATAK dist=%d ang=%.2f" % [dist, ang]
 	craft.ai_aim = aim
 	if dist < 750.0 and ang < 0.33 and alt > 10.0:
 		craft.trigger = true
@@ -167,9 +168,8 @@ func _plane(dt: float) -> void:
 		var bi: Vector3 = craft.bomb_impact()
 		if Vector2(bi.x - tp.x, bi.z - tp.z).length() < 12.0:
 			craft.start_salvo()
-	if dist < 170.0 or (alt < MIN_ALT + 10.0 and to.y < 0.0 and dist < 350.0):
-		_extend = randf_range(4.0, 6.0)
-		_extending = true
+	if dist < 160.0:
+		_extend = randf_range(3.5, 5.0)
 
 
 # ---------------------------------------------------------------- śmigłowiec

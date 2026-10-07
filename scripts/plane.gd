@@ -45,6 +45,10 @@ const BOMB_DT := 0.11                      # odstęp między bombami w serii
 const GUN_DT := 0.02                       # odstęp między strzałami kolejnych karabinów (4 × 750/min)
 const CONVERGE := 280.0
 # (zmienne, nie stałe: inne samoloty — np. C-130 — nadpisują je w _init)
+# lot zręcznościowy (jak War Thunder): prędkości i szybkość skrętu za celownikiem
+var V_MIN := 40.0                          # poniżej nos opada (zamiast przeciągnięcia)
+var V_MAX := 150.0                         # przy pełnym gazie w locie poziomym
+var TURN_RATE := 1.3                       # maks. obrót nosa za celownikiem [rad/s]
 var BOARD := Vector3.ZERO                  # punkt wsiadania (układ samolotu) i jego zasięg
 var BOARD_R := 5.0
 var EXIT := Vector3(-2.0, 0, 0.9)          # gdzie staje wysiadający
@@ -694,27 +698,30 @@ func _simulate(dt: float) -> void:
 		throttle = move_toward(throttle, ai.throttle, 0.6 * dt)
 	elif pilot == null and not on_ground:
 		throttle = maxf(throttle - 0.15 * dt, 0.0)   # bez pilota: silnik dławi się, samolot szybuje w dół
-	# siły (przyspieszenia)
-	var eng := 0.0 if hp <= 0.0 else (0.6 if hp < MAX_HP * 0.25 else 1.0)
-	eng *= clampf((1400.0 - global_position.y) / 700.0, 0.0, 1.0)
-	var acc := Vector3(0, -GRAVITY, 0) + fwd * throttle * THRUST * eng
-	if v > 0.5:
-		var vd := velocity / v
-		acc += right.cross(vd).normalized() * K_LIFT * cl * v * v
-		acc -= vd * (CD0 + K_IND * cl * cl) * v * v
-		acc -= right * lv.x * v * K_SIDE
-	velocity += acc * dt
-	# obrót: stery (skuteczność rośnie z prędkością) + stateczność (nos ustawia się do opływu)
-	var ak := clampf(v / 40.0, 0.0, 1.25)
-	var sk := clampf(v / 30.0, 0.0, 1.5)
-	var tw := Vector3(ctrl.x * PITCH_RATE * ak - aoa * K_STAB * sk,
-		ctrl.y * YAW_RATE * ak + beta * K_STAB_Y * sk,
-		ctrl.z * ROLL_RATE * ak)
-	if hp <= 0.0 and not on_ground:
-		tw += Vector3(-0.15, 0.1, 0.9) * sk     # płonący samolot wpada w spiralę
-	_w = _w.lerp(tw, 1.0 - exp(-INERTIA * dt))
-	b = b * Basis(Vector3.RIGHT, _w.x * dt) * Basis(Vector3.UP, -_w.y * dt) * Basis(Vector3.FORWARD, _w.z * dt)
-	global_basis = b.orthonormalized()
+	if not on_ground and hp > 0.0 and (_local_pilot() or _ai_on()):
+		_arcade(dt)
+	else:
+		# siły (przyspieszenia)
+		var eng := 0.0 if hp <= 0.0 else (0.6 if hp < MAX_HP * 0.25 else 1.0)
+		eng *= clampf((1400.0 - global_position.y) / 700.0, 0.0, 1.0)
+		var acc := Vector3(0, -GRAVITY, 0) + fwd * throttle * THRUST * eng
+		if v > 0.5:
+			var vd := velocity / v
+			acc += right.cross(vd).normalized() * K_LIFT * cl * v * v
+			acc -= vd * (CD0 + K_IND * cl * cl) * v * v
+			acc -= right * lv.x * v * K_SIDE
+		velocity += acc * dt
+		# obrót: stery (skuteczność rośnie z prędkością) + stateczność (nos ustawia się do opływu)
+		var ak := clampf(v / 40.0, 0.0, 1.25)
+		var sk := clampf(v / 30.0, 0.0, 1.5)
+		var tw := Vector3(ctrl.x * PITCH_RATE * ak - aoa * K_STAB * sk,
+			ctrl.y * YAW_RATE * ak + beta * K_STAB_Y * sk,
+			ctrl.z * ROLL_RATE * ak)
+		if hp <= 0.0 and not on_ground:
+			tw += Vector3(-0.15, 0.1, 0.9) * sk     # płonący samolot wpada w spiralę
+		_w = _w.lerp(tw, 1.0 - exp(-INERTIA * dt))
+		b = b * Basis(Vector3.RIGHT, _w.x * dt) * Basis(Vector3.UP, -_w.y * dt) * Basis(Vector3.FORWARD, _w.z * dt)
+		global_basis = b.orthonormalized()
 	var col := move_and_collide(velocity * dt)
 	if col and _hit_obstacle(col):
 		return
@@ -731,6 +738,43 @@ func _simulate(dt: float) -> void:
 				_show_racks()
 		if hp > 0.0:
 			hp = minf(hp + 8.0 * dt, MAX_HP)
+
+
+## Lot zręcznościowy: nos podąża za celownikiem (ograniczona szybkość skrętu), prędkość z gazu
+## (wznoszenie ją zjada, nurkowanie dodaje), automatyczne przechylenie w zakręcie, brak przeciągnięcia.
+func _arcade(dt: float) -> void:
+	stall = false
+	_w = Vector3.ZERO
+	var fwd := -global_basis.z
+	var spd := velocity.length()
+	var eng := 0.6 if hp < MAX_HP * 0.25 else 1.0
+	var target := V_MIN + (V_MAX - V_MIN) * throttle * eng
+	spd = move_toward(spd, target, THRUST * 0.45 * dt)
+	spd = maxf(spd - fwd.y * GRAVITY * 0.55 * dt, 18.0)
+	if _local_pilot():
+		_aim_yaw -= Input.get_axis("move_left", "move_right") * 0.7 * dt   # A/D — lekki skręt
+	_aim_s = _aim_s.slerp(aim_dir(), 1.0 - exp(-AIM_SMOOTH * 1.5 * dt)).normalized()
+	var want := _aim_s
+	if spd < V_MIN * 0.85:
+		want = (want + Vector3.DOWN * clampf((V_MIN * 0.85 - spd) / 10.0, 0.0, 1.0)).normalized()
+	var rate := TURN_RATE * clampf(spd / V_MIN, 0.4, 1.0)
+	# kurs i pochylenie osobno: zawracanie to zakręt w poziomie, nie pętla
+	var cy := atan2(-fwd.x, -fwd.z)
+	var cp := asin(clampf(fwd.y, -1.0, 1.0))
+	var ty := atan2(-want.x, -want.z)
+	var tp := asin(clampf(want.y, -1.0, 1.0))
+	var dyaw := clampf(wrapf(ty - cy, -PI, PI), -rate * dt, rate * dt)
+	var np := clampf(cp + clampf(tp - cp, -rate * 0.8 * dt, rate * 0.8 * dt), -1.3, 1.3)
+	var nf := Basis.from_euler(Vector3(np, cy + dyaw, 0.0)) * Vector3.FORWARD
+	# przechylenie jak w zakręcie skoordynowanym: tg(φ) = v·ω / g (w prawo +)
+	var turn := -dyaw / maxf(dt, 0.0001)
+	var bank_t := clampf(atan(spd * turn / GRAVITY), -1.3, 1.3)
+	_bank_cmd = lerpf(_bank_cmd, bank_t, 1.0 - exp(-3.5 * dt))
+	var ref := Basis.looking_at(nf, Vector3.UP if absf(nf.y) < 0.98 else -fwd)
+	var up := ref.y * cos(_bank_cmd) + ref.x * sin(_bank_cmd)
+	var z := -nf
+	global_basis = Basis(up.cross(z).normalized(), up.normalized(), z).orthonormalized()
+	velocity = nf * spd
 
 
 func _cl(a: float) -> float:

@@ -145,6 +145,8 @@ func _draw() -> void:
 		var sd := Vector2(-d.y, d.x)
 		var enemy: bool = pl.pilot != null and is_instance_valid(pl.pilot) and pl.pilot != me
 		var col := Color(1.0, 0.3, 0.2) if enemy else Color(0.75, 0.88, 1.0)
+		if pl.get("is_heli") != true and pl.BOMBS == 8 and pl.GUNS.is_empty():
+			draw_string(font, q + Vector2(10, 4), "C-130", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
 		if pl.get("is_heli") == true:
 			draw_circle(q, 5.0, col)
 			draw_line(q - d * 9.0, q + d * 9.0, col, 1.5)
