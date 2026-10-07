@@ -9,11 +9,12 @@ const FX = preload("res://scripts/fx.gd")
 
 const HURT_MASK := 8
 const WORLD_MASK := 1
+const VEHICLE_MASK := 32
 const MAX_LIFE := 4.0
 const MIN_SPEED := 90.0
 const GRAVITY := Vector3(0, -9.81, 0)
 # prędkość, przy której zmierzono penetrację w tkance ("pen" w Weapons.CAL)
-const V_REF := {"9x19": 380.0, "5.56x45": 910.0, "7.62x39": 715.0, "7.62x51": 790.0, "12ga": 400.0, "5.45x39": 900.0, "357": 440.0, "50ae": 470.0, "338lm": 900.0}
+const V_REF := {"9x19": 380.0, "5.56x45": 910.0, "7.62x39": 715.0, "7.62x51": 790.0, "12ga": 400.0, "5.45x39": 900.0, "357": 440.0, "50ae": 470.0, "338lm": 900.0, "12.7x99": 890.0, "frag": 1100.0}
 # materiał: twardość (ile metrów tkanki "zużywa" 1 m materiału), maks. kąt rykoszetu [stopnie]
 const MATS := {
 	"concrete": {"tough": 14.0, "ric": 14.0, "fx": "dust"},
@@ -58,8 +59,9 @@ func _ready() -> void:
 	add_child(mi)
 
 
-## Strzał z broni. dir: kierunek linii celowania (już z rozrzutem strzelca). Zwraca liczbę pocisków.
-func fire(shooter: Node, gun, origin: Vector3, dir: Vector3, tracer := false) -> void:
+## Strzał z broni. dir: kierunek linii celowania (już z rozrzutem strzelca).
+## inherit: prędkość nosiciela broni (samolot), extra_excl: bryły pomijane (własny samolot).
+func fire(shooter: Node, gun, origin: Vector3, dir: Vector3, tracer := false, inherit := Vector3.ZERO, extra_excl: Array = []) -> void:
 	var cal: Dictionary = gun.cal
 	var n := int(cal.get("pellets", 1))
 	var v0 := float(gun.data["v0"]) * _rng.randf_range(0.985, 1.015)
@@ -68,6 +70,11 @@ func fire(shooter: Node, gun, origin: Vector3, dir: Vector3, tracer := false) ->
 	var drop_t := zero / v0
 	var elev := 0.5 * 9.81 * drop_t * drop_t / zero
 	var excl: Array = shooter.hit_rids() if shooter and shooter.has_method("hit_rids") else []
+	if shooter and is_instance_valid(shooter):
+		shooter.set_meta("shot_t", Time.get_ticks_msec() / 1000.0)   # minimapa: strzelający wróg
+	if not extra_excl.is_empty():
+		excl = excl.duplicate()
+		excl.append_array(extra_excl)
 	for i in n:
 		var d := dir
 		if n > 1:
@@ -75,7 +82,7 @@ func fire(shooter: Node, gun, origin: Vector3, dir: Vector3, tracer := false) ->
 			d = _jitter(d, s)
 		d = (d + Vector3.UP * elev).normalized()
 		bullets.append({
-			"p": origin, "v": d * v0, "cal": gun.data["cal"], "c": cal, "shooter": shooter,
+			"p": origin, "v": d * v0 + inherit, "cal": gun.data["cal"], "c": cal, "shooter": shooter,
 			"excl": excl.duplicate(), "t": 0.0, "tracer": tracer and i == 0, "depth": 0.0,
 			"near": {}, "bounces": 0,
 		})
@@ -128,7 +135,7 @@ func _step(b: Dictionary, dt: float, space: PhysicsDirectSpaceState3D, soldiers:
 	var guard := 0
 	while guard < 6:
 		guard += 1
-		var q := PhysicsRayQueryParameters3D.create(from, p1, WORLD_MASK | HURT_MASK, b["excl"])
+		var q := PhysicsRayQueryParameters3D.create(from, p1, WORLD_MASK | HURT_MASK | VEHICLE_MASK, b["excl"])
 		q.collide_with_areas = true
 		var r := space.intersect_ray(q)
 		if r.is_empty():
@@ -278,6 +285,8 @@ func _obstacle(b: Dictionary, col: Object, hp: Vector3, nrm: Vector3, dir: Vecto
 	var eq := thick * float(m["tough"])
 	var pen := _pen(b)
 	FX.I.impact(hp, nrm, m["fx"], 1.0)
+	if col is Node and (col as Node).has_method("bullet_struck"):
+		col.bullet_struck(b["shooter"], 0.5 * float(c["mass"]) * v * v, hp)
 	FX.I.bullet_hole(hp, nrm, col as Node3D, mat)
 	FX.I.play("impact_" + ("metal" if mat == "metal" else ("wood" if mat == "wood" else "hard")), hp, -8.0, 0.2)
 	if eq < pen:

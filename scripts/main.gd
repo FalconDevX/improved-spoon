@@ -1,6 +1,7 @@
 extends Node3D
 ## Gra: mapa (wieś, kompleks, farma, sad), gracz-żołnierz. Solo: oddziały botów na posterunkach.
 ## PvP 1 na 1 przez GD-Sync (online z kluczami API albo w sieci lokalnej / na tym PC bez kluczy).
+## Na lotnisku stoją myśliwce — można do nich wsiąść, latać i strzelać z karabinów maszynowych.
 
 const Player = preload("res://scripts/player.gd")
 const Npc = preload("res://scripts/npc.gd")
@@ -9,6 +10,12 @@ const FX = preload("res://scripts/fx.gd")
 const Ballistics = preload("res://scripts/ballistics.gd")
 const Hud = preload("res://scripts/hud.gd")
 const Level = preload("res://scripts/level.gd")
+const Aircraft = preload("res://scripts/plane.gd")
+const Clouds = preload("res://scripts/clouds.gd")
+const Grass = preload("res://scripts/grass.gd")
+const Post = preload("res://scripts/post.gd")
+const Minimap = preload("res://scripts/minimap.gd")
+const PLANE_PAINT := [Color(0.33, 0.38, 0.25), Color(0.36, 0.4, 0.44), Color(0.55, 0.47, 0.33)]
 
 const MAX_NPC := 32
 const RESPAWN_PVP := 5.0
@@ -35,6 +42,10 @@ func _ready() -> void:
 	_level.name = "Level"
 	add_child(_level)
 	_level.build()
+	var clouds := Clouds.new()
+	clouds.name = "Clouds"
+	add_child(clouds)
+	_plant_grass.call_deferred()
 	Npc.level = _level
 	Npc.deaths = 0
 	Player.net_on = false
@@ -48,6 +59,16 @@ func _ready() -> void:
 		_start_pvp(args[1] == "online", args[0] == "host", args[2])
 	else:
 		_show_menu()
+
+
+## Trawa po pierwszych krokach fizyki (promienie muszą widzieć już budynki).
+func _plant_grass() -> void:
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var g := Grass.new()
+	g.name = "Grass"
+	add_child(g)
+	g.build(_level)
 
 
 func _process(_dt: float) -> void:
@@ -75,6 +96,7 @@ func _start_solo() -> void:
 	player.rotation.y = 0.0  # na północ (-Z), w stronę wsi
 	add_child(player)
 	_player = player
+	_spawn_planes()
 	_make_hud(player)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if _level.is_ready():
@@ -103,6 +125,16 @@ func _spawn_squads() -> void:
 
 # ======================================================== wspólne
 
+## Myśliwce na lotnisku (te same nazwy węzłów u obu graczy — GD-Sync woła funkcje po ścieżce).
+func _spawn_planes() -> void:
+	for i in _level.plane_spots.size():
+		var pl := Aircraft.new()
+		pl.name = "Plane%d" % (i + 1)
+		pl.paint = PLANE_PAINT[i % PLANE_PAINT.size()]
+		pl.transform = _level.plane_spots[i]
+		add_child(pl)
+
+
 func _make_hud(player: Node) -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
@@ -110,6 +142,13 @@ func _make_hud(player: Node) -> void:
 	hud.player = player
 	layer.add_child(hud)
 	_hud = hud
+	var mm := Minimap.new()
+	mm.main = self
+	mm.level = _level
+	layer.add_child(mm)
+	var post := Post.new()
+	post.main = self
+	add_child(post)
 
 
 func _unhandled_input(e: InputEvent) -> void:
@@ -142,6 +181,11 @@ func _setup_input() -> void:
 	_key("weapon_10", KEY_0)
 	_key("view_toggle", KEY_V)
 	_key("laser", KEY_L)
+	_key("help", KEY_F1)
+	_key("stick_up", KEY_UP)
+	_key("stick_down", KEY_DOWN)
+	_key("stick_left", KEY_LEFT)
+	_key("stick_right", KEY_RIGHT)
 	_mouse("attack", MOUSE_BUTTON_LEFT)
 	_mouse("aim", MOUSE_BUTTON_RIGHT)
 	_mouse("next_weapon", MOUSE_BUTTON_WHEEL_DOWN)
@@ -166,55 +210,102 @@ func _mouse(action: String, button: MouseButton) -> void:
 	InputMap.action_add_event(action, e)
 
 
+const SKY_SHADER := """
+shader_type sky;
+// Niebo: gradient z mgiełką przy horyzoncie, słońce z poświatą, dwie warstwy chmur (fbm) płynące
+// z wiatrem i oświetlone od strony słońca.
+uniform vec3 zenith : source_color = vec3(0.16, 0.33, 0.62);
+uniform vec3 horizon : source_color = vec3(0.68, 0.75, 0.82);
+uniform vec3 ground : source_color = vec3(0.6, 0.65, 0.7);
+uniform float cover = 0.48;
+float h(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float n2(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+// fbm z obrotem między oktawami (bez widocznej siatki szumu)
+float fbm(vec2 p) { float v = 0.0; float a = 0.5; mat2 r = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8));
+	for (int i = 0; i < 6; i++) { v += a * n2(p); p = r * p * 2.03 + 17.1; a *= 0.5; } return v; }
+void sky() {
+	vec3 d = EYEDIR;
+	float up = clamp(d.y, 0.0, 1.0);
+	vec3 col = mix(horizon, zenith, pow(up, 0.45));
+	col = mix(col, ground, smoothstep(0.0, -0.12, d.y));
+	vec3 sun = LIGHT0_DIRECTION;
+	float sd = max(dot(d, sun), 0.0);
+	col += LIGHT0_COLOR * (pow(sd, 6.0) * 0.18 + pow(sd, 60.0) * 0.35);
+	if (!AT_CUBEMAP_PASS) {
+		col += LIGHT0_COLOR * smoothstep(0.9995, 0.9998, sd) * 8.0;
+	}
+	if (d.y > 0.0) {
+		vec2 uv = d.xz / (d.y + 0.12);
+		vec2 wind = vec2(TIME * 0.006, TIME * 0.002);
+		float c1 = fbm(uv * 1.3 + wind);
+		float c2 = fbm(uv * 3.1 - wind * 1.7 + 4.0);
+		float dens = smoothstep(1.0 - cover, 1.0 - cover + 0.45, c1 * 0.75 + c2 * 0.35);
+		// strona od słońca ciemniejsza (prosty ślad światła przez chmurę)
+		float shade = fbm(uv * 1.3 + wind + sun.xz * 0.06);
+		vec3 lit = mix(vec3(1.0, 0.98, 0.95), vec3(0.62, 0.66, 0.74), smoothstep(0.35, 0.8, shade));
+		lit += LIGHT0_COLOR * pow(sd, 8.0) * 0.4;
+		col = mix(col, lit, dens * smoothstep(0.0, 0.15, d.y) * 0.92);
+	}
+	COLOR = col;
+}
+"""
+
+
 func _build_environment() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
-	var psm := ProceduralSkyMaterial.new()
-	psm.sky_top_color = Color(0.22, 0.4, 0.66)
-	psm.sky_horizon_color = Color(0.66, 0.72, 0.78)
-	psm.ground_horizon_color = Color(0.66, 0.72, 0.78)
-	psm.ground_bottom_color = Color(0.2, 0.19, 0.16)
-	sky.sky_material = psm
+	var sm := ShaderMaterial.new()
+	var ssh := Shader.new()
+	ssh.code = SKY_SHADER
+	sm.shader = ssh
+	sky.sky_material = sm
+	sky.radiance_size = Sky.RADIANCE_SIZE_128
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.6
+	env.ambient_light_energy = 0.65
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.0
+	env.tonemap_exposure = 0.9
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.12
+	env.adjustment_contrast = 1.14
 	env.adjustment_saturation = 1.15
 	env.ssao_enabled = true
-	env.ssao_radius = 1.0
-	env.ssao_intensity = 2.0
+	env.ssao_radius = 1.2
+	env.ssao_intensity = 2.2
 	env.ssao_detail = 0.8
+	env.ssil_enabled = true
+	env.ssil_radius = 4.0
+	env.ssil_intensity = 0.8
 	env.glow_enabled = true
-	env.glow_intensity = 0.3
-	env.glow_bloom = 0.03
+	env.glow_intensity = 0.35
+	env.glow_bloom = 0.04
+	env.glow_hdr_threshold = 1.1
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.62, 0.68, 0.75)
-	env.fog_density = 0.0016
-	env.fog_aerial_perspective = 0.4
-	env.fog_sky_affect = 0.25
+	env.fog_light_color = Color(0.6, 0.65, 0.7)
+	env.fog_density = 0.0014
+	env.fog_aerial_perspective = 0.5
+	env.fog_sky_affect = 0.2
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-52, -35, 0)
-	sun.light_energy = 1.6
-	sun.light_color = Color(1.0, 0.96, 0.9)
+	sun.rotation_degrees = Vector3(-42, -35, 0)
+	sun.light_energy = 1.7
+	sun.light_color = Color(1.0, 0.94, 0.85)
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.5
-	sun.directional_shadow_max_distance = 120.0
+	sun.directional_shadow_max_distance = 140.0
 	sun.directional_shadow_blend_splits = true
 	add_child(sun)
 
 	var fill := DirectionalLight3D.new()
 	fill.rotation_degrees = Vector3(-25, 150, 0)
-	fill.light_energy = 0.3
+	fill.light_energy = 0.25
 	fill.light_color = Color(0.6, 0.75, 1.0)
+	fill.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
 	add_child(fill)
 
 
@@ -347,6 +438,7 @@ func _on_lobby_joined(_n: String) -> void:
 	var gd := get_node("/root/GDSync")
 	Player.net_on = true
 	_close_menu()
+	_spawn_planes()
 	var me: int = gd.get_client_id()
 	var host_side: bool = gd.is_host()
 	var p := _make_net_player(me, false, _pvp_spawn(_level.posts[11] if host_side else _level.posts[9]))
@@ -408,6 +500,7 @@ func _respawn_local() -> void:
 	var pos := _pvp_spawn()
 	var p := _make_net_player(me, false, pos, old.deaths)
 	p.kills = old.kills
+	p.score = old.score
 	_player = p
 	_hud.player = p
 	gd.call_func(net_respawn, me, pos, old.deaths)

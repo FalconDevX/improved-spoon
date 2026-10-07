@@ -70,6 +70,9 @@ func _ready() -> void:
 			"impact_wood": Sfx.impact(700.0, 22),
 			"impact_metal": Sfx.ping(),
 			"groan": Sfx.groan(),
+			"shot_50": Sfx.shot(0.6, 0.55, 50),
+			"engine": Sfx.engine(),
+			"boom": Sfx.explosion(),
 			"hole": TexGen.bullet_hole(),
 		}
 
@@ -672,3 +675,82 @@ func muzzle_smoke(pos: Vector3, dir: Vector3, amount := 1.0) -> void:
 	get_tree().create_timer(1.9).timeout.connect(func():
 		_smoke_n -= 1
 		p.queue_free())
+
+
+# ---------------------------------------------------------------- wybuch
+
+## Wybuch (rozbity samolot): kula ognia, błysk, kłęby czarnego dymu, odłamki iskier, huk.
+func explosion(pos: Vector3, size := 1.0) -> void:
+	play("boom", pos, 10.0, 0.08, 1.0, 60.0)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.6, 0.25)
+	light.light_energy = 12.0 * size
+	light.omni_range = 30.0 * size
+	add_child(light)
+	light.global_position = pos + Vector3(0, 1.5, 0)
+	var tw := create_tween()
+	tw.tween_property(light, "light_energy", 0.0, 0.9)
+	tw.tween_callback(light.queue_free)
+	_burst(pos, 60, 0.9, 4.0 * size, 14.0 * size, Vector3(0, 2.0, 0), [Color(1.0, 0.85, 0.45, 1.0), Color(1.0, 0.35, 0.05, 0.9), Color(0.15, 0.1, 0.08, 0.0)], 1.2 * size, true)
+	_burst(pos, 40, 4.5, 1.0 * size, 6.0 * size, Vector3(0, 1.8, 0), [Color(0.12, 0.11, 0.1, 0.85), Color(0.25, 0.24, 0.23, 0.5), Color(0.3, 0.3, 0.3, 0.0)], 2.6 * size, false)
+	_burst(pos, 50, 1.6, 8.0 * size, 26.0 * size, Vector3(0, -9.8, 0), [Color(1.0, 0.8, 0.4, 1.0), Color(1.0, 0.4, 0.1, 1.0), Color(0.5, 0.1, 0.0, 0.0)], 0.08, true)
+
+
+## Lej po wybuchu: ciemna, osmalona plama na ziemi.
+func crater(pos: Vector3) -> void:
+	var d := Decal.new()
+	d.texture_albedo = _cache["dot"]
+	d.modulate = Color(0.05, 0.04, 0.035, 0.95)
+	d.size = Vector3(7.0, 3.0, 7.0)
+	d.cull_mask = FLOOR_LAYER
+	add_child(d)
+	d.global_position = pos
+	d.rotation.y = randf() * TAU
+	_decals.append(d)
+	while _decals.size() > MAX_DECALS:
+		var old = _decals.pop_front()
+		if is_instance_valid(old):
+			old.queue_free()
+
+
+func _burst(pos: Vector3, amount: int, life: float, v0: float, v1: float, grav: Vector3, cols: Array, size: float, add: bool) -> void:
+	var p := GPUParticles3D.new()
+	p.one_shot = true
+	p.amount = amount
+	p.lifetime = life
+	p.explosiveness = 0.95
+	p.local_coords = false
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.visibility_aabb = AABB(Vector3(-40, -10, -40), Vector3(80, 60, 80))
+	var m := ParticleProcessMaterial.new()
+	m.direction = Vector3.UP
+	m.spread = 90.0
+	m.initial_velocity_min = v0
+	m.initial_velocity_max = v1
+	m.gravity = grav
+	m.damping_min = 1.0
+	m.damping_max = 3.0
+	m.scale_min = 0.6
+	m.scale_max = 1.4
+	m.scale_curve = _mist_curve
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.4, 1.0])
+	g.colors = PackedColorArray(cols)
+	var gt := GradientTexture1D.new()
+	gt.gradient = g
+	m.color_ramp = gt
+	p.process_material = m
+	var q := QuadMesh.new()
+	q.size = Vector2(size, size)
+	var key := "boom_add" if add else "boom_smoke"
+	if not _impact_mats.has(key):
+		var mm := _mist_mat.duplicate() as StandardMaterial3D
+		if add:
+			mm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_impact_mats[key] = mm
+	q.material = _impact_mats[key]
+	p.draw_pass_1 = q
+	add_child(p)
+	p.global_position = pos
+	p.emitting = true
+	get_tree().create_timer(life + 0.5).timeout.connect(p.queue_free)

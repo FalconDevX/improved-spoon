@@ -263,3 +263,65 @@ static func groan() -> AudioStreamWAV:
 		var env := smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.55, 0.9, t))
 		s[i] = (band * 0.7 + low * 0.3) * env
 	return _wav(s)
+
+
+## Silnik tłokowy samolotu: pętla 1 s (całkowita liczba okresów — zapętla się bez trzasków).
+## Harmoniczne zapłonów + szum wydechu modulowany rytmem cylindrów.
+static func engine() -> AudioStreamWAV:
+	var n := RATE
+	var f0 := 40.0
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1940
+	var noise := PackedFloat32Array()
+	noise.resize(n)
+	for i in n:
+		noise[i] = rng.randf_range(-1.0, 1.0)
+	# filtr dolnoprzepustowy puszczony dwa razy dookoła pętli: stan na końcu = stan na początku
+	var lp := 0.0
+	for pass_ in 2:
+		for i in n:
+			lp += (noise[i] - lp) * 0.12
+			if pass_ == 1:
+				noise[i] = lp
+	var ph := []
+	for k in 14:
+		ph.append(rng.randf() * TAU)
+	for i in n:
+		var t := float(i) / RATE
+		var v := 0.0
+		for k in range(1, 15):
+			v += sin(TAU * f0 * k * t + ph[k - 1]) / pow(k, 0.75)
+		var pulse := pow(0.5 + 0.5 * sin(TAU * f0 * 4.5 * t), 3.0)
+		v += noise[i] * (0.8 + 2.2 * pulse)
+		v += sin(TAU * f0 * 0.5 * t) * 0.6   # bicie śmigła
+		s[i] = v
+	var w := _wav(s)
+	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	w.loop_begin = 0
+	w.loop_end = n
+	return w
+
+
+## Wybuch: niski grzmot, trzask i długi pogłos.
+static func explosion() -> AudioStreamWAV:
+	var n := int(RATE * 2.6)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 777
+	var lp := 0.0
+	var lp2 := 0.0
+	var phase := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var x := rng.randf_range(-1.0, 1.0)
+		lp += (x - lp) * 0.5
+		lp2 += (x - lp2) * 0.02
+		phase += TAU * 38.0 * (1.0 + 1.5 * exp(-t * 12.0)) / RATE
+		var crack := lp * exp(-t * 35.0) * 1.5
+		var boom := sin(phase) * exp(-t * 3.5) * 1.3
+		var rumble := lp2 * 9.0 * exp(-t * 1.6) * smoothstep(0.0, 0.03, t)
+		s[i] = crack + boom + rumble
+	return _wav(s)

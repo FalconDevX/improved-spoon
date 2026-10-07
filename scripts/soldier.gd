@@ -229,7 +229,12 @@ func bullet_hit(h: Dictionary) -> void:
 	var seg_n: Node3D = body.segs[seg]
 	var energy: float = h.get("energy", 0.0)
 	last_hit_time = Time.get_ticks_msec() / 1000.0
+	var sh = h.get("shooter")
+	if sh != null and is_instance_valid(sh) and sh != self:
+		last_shooter = sh
+		last_hit_seg = seg
 	if h.get("armor", "") != "":
+		_confirm(sh, 0)
 		vitals.blunt(clampf(energy / 500.0, 0.2, 1.0))
 		_note("%s zatrzymał%s pocisk" % [String(h["armor"]).capitalize(), "a" if h["armor"] == "kamizelka" else ""], [])
 		if not down:
@@ -268,6 +273,8 @@ func bullet_hit(h: Dictionary) -> void:
 		_on_hit(h, res)
 		return
 	rig.hit_react(visual.global_basis.inverse() * dir, seg, clampf(energy / 1500.0, 0.3, 1.6))
+	# trafienie: zwykłe (biały znacznik) albo groźne — narząd / głowa (żółty)
+	_confirm(sh, 1 if (seg == "head" or not names.is_empty()) else 0)
 	if res.get("arm", false):
 		rig.limp_arm = vitals.arms.duplicate()
 	if res["kill"]:
@@ -300,11 +307,23 @@ func near_miss(_pos: Vector3, _dist: float, _speed: float, _shooter) -> void:
 	pass
 
 
+## Kto mnie ostatnio trafił (zabójstwo zaliczane także po wykrwawieniu).
+var last_shooter = null
+var last_hit_seg := ""
+
+
+func _confirm(sh, strength: int) -> void:
+	if sh != null and is_instance_valid(sh) and sh != self and sh.has_method("on_hit_confirmed"):
+		sh.on_hit_confirmed(self, strength)
+
+
 ## Utrata przytomności / śmierć: ciało staje się ragdollem, broń wypada z rąk.
 func _collapse(dir: Vector3, at: Vector3, seg: String, energy: float, instant: bool) -> void:
 	if down:
 		return
 	down = true
+	if last_shooter != null and is_instance_valid(last_shooter) and last_shooter.has_method("on_kill"):
+		last_shooter.on_kill(self)
 	reloading = -1.0
 	var flat := Vector3(dir.x, 0, dir.z).normalized() if Vector3(dir.x, 0, dir.z).length() > 0.01 else -visual.global_basis.z
 	var imp := flat * clampf(8.0 + energy * 0.01, 8.0, 30.0) * (0.4 if instant else 1.0)

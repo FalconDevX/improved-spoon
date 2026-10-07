@@ -1,7 +1,8 @@
 extends "res://scripts/soldier.gd"
 ## Gracz: ruch, widok z pierwszej osoby (broń po prawej, PPM — celowanie przez kolimator / lunetę)
 ## albo zza ramienia [V], laser [L], odrzut, kołysanie broni (oddech, zmęczenie, ból, utrata krwi),
-## wstrzymanie oddechu, trzynaście broni, magazynki, tryby ognia, opatrunki, zbieranie amunicji.
+## wstrzymanie oddechu, trzynaście broni, magazynki, tryby ognia, opatrunki, zbieranie amunicji,
+## samoloty (wsiadanie [E], sterowanie przejmuje plane.gd).
 
 const WALK := 1.6
 const JOG := 3.6
@@ -59,6 +60,7 @@ var _vm_kick_v := 0.0
 var _vm_low := 0.0
 var _bob_t := 0.0
 var _aim_local := Vector3.FORWARD
+var vehicle = null             # samolot, w którym siedzę (plane.gd)
 
 
 func _ready() -> void:
@@ -72,7 +74,7 @@ func _ready() -> void:
 	else:
 		add_to_group("player")
 		collision_layer = 2
-		collision_mask = 1 | 4
+		collision_mask = 1 | 4 | 32
 		build_soldier(Color(0.55, 0.6, 0.62), soldier_look())
 	_holster = Node3D.new()
 	_holster.visible = false
@@ -129,6 +131,9 @@ func camera() -> Camera3D:
 func _unhandled_input(e: InputEvent) -> void:
 	if is_remote:
 		return
+	if vehicle and not down and e is InputEventMouseMotion:
+		vehicle.pilot_input(e)
+		return
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var k := MOUSE_SENS * lerpf(1.0, _cam.fov / 70.0, ads)
 		_yaw -= e.relative.x * k
@@ -138,6 +143,9 @@ func _unhandled_input(e: InputEvent) -> void:
 		get_tree().reload_current_scene()
 		return
 	if down:
+		return
+	if vehicle:
+		vehicle.pilot_input(e)
 		return
 	if e.is_action_pressed("attack"):
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -160,7 +168,8 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e.is_action_pressed("bandage"):
 		_start_bandage()
 	elif e.is_action_pressed("use"):
-		_loot()
+		if not _board_plane():
+			_loot()
 	elif e.is_action_pressed("view_toggle"):
 		first_person = not first_person
 	elif e.is_action_pressed("laser"):
@@ -243,14 +252,13 @@ func _physics_process(dt: float) -> void:
 	if is_remote:
 		_net_follow(dt)
 		return
+	_tick_kills(dt)
 	_tick_vitals(dt)
 	if down:
 		_death_t += dt
 		return
 	if net_on:
 		_net_send(dt)
-	_tick_weapon(dt)
-	_switch_t = maxf(_switch_t - dt, 0.0)
 	message_t -= dt
 	hit_marker = maxf(hit_marker - dt * 3.0, 0.0)
 	_trauma = maxf(_trauma - dt * 1.5, 0.0)
@@ -258,6 +266,10 @@ func _physics_process(dt: float) -> void:
 		damage_dirs[i][1] -= dt
 		if damage_dirs[i][1] <= 0.0:
 			damage_dirs.remove_at(i)
+	if vehicle:
+		return   # w kabinie: ruch i strzelanie prowadzi samolot
+	_tick_weapon(dt)
+	_switch_t = maxf(_switch_t - dt, 0.0)
 	if bandaging >= 0.0:
 		bandaging += dt
 		if bandaging >= 3.0:
@@ -360,7 +372,7 @@ func _want_more_shells() -> bool:
 
 func _process(dt: float) -> void:
 	var rd := minf(dt, 0.1)
-	if is_remote:
+	if is_remote or vehicle:
 		_animate(rd, false)
 		return
 	var rec := _rec_pending * (1.0 - exp(-7.0 * rd))
@@ -403,7 +415,7 @@ func _update_aim() -> void:
 	var from := _cam.global_position
 	var dir := (_cam.global_basis * _aim_local).normalized()
 	var skip := 0.1 if first_person else _arm.get_hit_length() + 0.4
-	var q := PhysicsRayQueryParameters3D.create(from + dir * skip, from + dir * 600.0, 1 | 8, hit_rids())
+	var q := PhysicsRayQueryParameters3D.create(from + dir * skip, from + dir * 600.0, 1 | 8 | 32, hit_rids())
 	q.collide_with_areas = true
 	var r := get_world_3d().direct_space_state.intersect_ray(q)
 	aim_point = r["position"] if not r.is_empty() else from + dir * 600.0
@@ -524,11 +536,88 @@ func near_miss(pos: Vector3, dist: float, spd: float, _shooter) -> void:
 	_trauma = minf(_trauma + 0.12 / maxf(dist, 0.3), 0.6)
 
 
-func confirm_hit(target, newly_down: bool) -> void:
+# ---------------------------------------------------------------- znaczniki trafień i zabójstw
+# Jak w Battlefront II: znacznik trafienia biały (zwykłe), żółty (groźne: narząd, głowa),
+# czerwony (eliminacja); nad zabitym czerwona czaszka, na środku „ELIMINACJA +100”, lista zabójstw.
+
+const KILL_MARK_TIME := 3.5
+var hit_kind := 0             # 0 biały, 1 żółty, 2 czerwony
+var score := 0
+var kill_marks: Array = []    # {node, pos, t, head}
+var kill_feed: Array = []     # {text, t}
+var kill_banner: Array = []   # [{text, pts}] ostatnie zdarzenie
+var kill_banner_t := 0.0
+var _streak := 0
+var _streak_t := 0.0
+
+
+func on_hit_confirmed(_target, strength: int) -> void:
+	if is_remote:
+		return
+	if hit_marker < 0.35 or hit_kind < 2:
+		hit_kind = maxi(strength, hit_kind if hit_marker > 0.35 else 0)
 	hit_marker = 1.0
-	hit_kill = target.down
+	hit_kill = false
+	FX.I.play("click", global_position + Vector3(0, 1.6, 0), -6.0 if strength == 0 else -2.0, 0.05, 2.2 if strength == 0 else 1.6, 30.0)
+
+
+## Zgodność ze starszym API (plane.gd): trafienie celu bez ciała (samolot); zniszczenie = eliminacja.
+func confirm_hit(target, newly_down: bool) -> void:
+	on_hit_confirmed(target, 1)
 	if newly_down:
 		kills += 1
+		score += 150
+		hit_kind = 2
+		hit_kill = true
+		kill_banner = [{"text": "ZESTRZELENIE", "pts": 150}]
+		kill_banner_t = 2.6
+		kill_feed.push_front({"text": "Ty  zestrzeliłeś samolot", "t": 6.0})
+
+
+func on_kill(target) -> void:
+	if is_remote or not is_instance_valid(target):
+		return
+	kills += 1
+	hit_marker = 1.0
+	hit_kind = 2
+	hit_kill = true
+	var head: bool = target.last_hit_seg == "head"
+	var pts := 100 + (50 if head else 0)
+	_streak = _streak + 1 if _streak_t > 0.0 else 1
+	_streak_t = 6.0
+	var lines := [{"text": "ELIMINACJA", "pts": pts}]
+	if head:
+		lines.append({"text": "Strzał w głowę", "pts": 0})
+	if _streak >= 2:
+		var bonus := 25 * (_streak - 1)
+		lines.append({"text": "Seria zabójstw x%d" % _streak, "pts": bonus})
+		pts += bonus
+	score += pts
+	kill_banner = lines
+	kill_banner_t = 2.6
+	kill_marks.append({"node": target, "pos": target.chest_pos(), "t": KILL_MARK_TIME, "head": head})
+	var who: String = "Przeciwnik" if target.get("is_remote") == true else "Żołnierz wroga"
+	kill_feed.push_front({"text": "Ty  [%s]%s  %s" % [gun.data["name"] if gun else "?", "  ☠" if head else "", who], "t": 6.0})
+	if kill_feed.size() > 5:
+		kill_feed.pop_back()
+	FX.I.play("impact_metal", global_position + Vector3(0, 1.6, 0), -4.0, 0.0, 1.5, 30.0)
+
+
+func _tick_kills(dt: float) -> void:
+	kill_banner_t = maxf(kill_banner_t - dt, 0.0)
+	_streak_t = maxf(_streak_t - dt, 0.0)
+	for i in range(kill_marks.size() - 1, -1, -1):
+		var m: Dictionary = kill_marks[i]
+		m["t"] = float(m["t"]) - dt
+		var n = m["node"]
+		if is_instance_valid(n) and n.body:
+			m["pos"] = n.chest_pos()
+		if float(m["t"]) <= 0.0:
+			kill_marks.remove_at(i)
+	for i in range(kill_feed.size() - 1, -1, -1):
+		kill_feed[i]["t"] = float(kill_feed[i]["t"]) - dt
+		if float(kill_feed[i]["t"]) <= 0.0:
+			kill_feed.remove_at(i)
 
 
 # ---------------------------------------------------------------- sieć (PvP 1 na 1, GD-Sync)
@@ -575,6 +664,10 @@ func _on_fired(origin: Vector3, dir: Vector3, tracer: bool) -> void:
 func _collapse(dir: Vector3, at: Vector3, seg: String, energy: float, instant: bool) -> void:
 	if down:
 		return
+	if vehicle:
+		var v = vehicle
+		leave_vehicle(false)
+		v.pilot_gone(self)
 	if net_on and not is_remote:
 		deaths += 1
 		_gd().call_func(net_down, dir, at, seg, energy, instant, deaths)
@@ -600,8 +693,8 @@ func _net_forward_hit(h: Dictionary) -> void:
 		FX.I.play("hit", h["entry"], -4.0, 0.15)
 	rig.hit_react(visual.global_basis.inverse() * dir, h["seg"], 0.8)
 	last_hit_time = Time.get_ticks_msec() / 1000.0
-	sh.hit_marker = 1.0
-	sh.hit_kill = false
+	last_hit_seg = h["seg"]
+	sh.on_hit_confirmed(self, 1 if (h["seg"] == "head" or not (h.get("organs", []) as Array).is_empty()) else 0)
 
 
 # --- wywoływane zdalnie
@@ -649,10 +742,8 @@ func net_down(dir: Vector3, at: Vector3, seg: String, energy: float, instant: bo
 	global_position = _net_pos
 	_collapse(dir, at, seg, energy, instant)
 	for p in get_tree().get_nodes_in_group("player"):
-		if not p.down:
-			p.kills += 1
-			p.hit_marker = 1.0
-			p.hit_kill = true
+		if not p.down and not String(p.name).begins_with("Dead"):
+			p.on_kill(self)
 
 
 ## (mój żołnierz) kula przeciwnika trafiła mnie u niego — liczę skutki.
@@ -664,7 +755,7 @@ func net_hit(h: Dictionary) -> void:
 
 
 func _net_follow(dt: float) -> void:
-	if down:
+	if down or vehicle:
 		return
 	var target := _net_pos + _net_vel * 0.05
 	if global_position.distance_to(target) > 4.0:
@@ -675,3 +766,64 @@ func _net_follow(dt: float) -> void:
 	visual.rotation.y = lerp_angle(visual.rotation.y, _yaw, 1.0 - exp(-16.0 * dt))
 	rig.vel = visual.global_basis.inverse() * velocity
 	yaw = _yaw
+
+
+# ---------------------------------------------------------------- samoloty
+
+func _board_plane() -> bool:
+	for pl in get_tree().get_nodes_in_group("plane"):
+		if pl.can_board(self):
+			pl.board(self)
+			return true
+	return false
+
+
+## Siadam w kabinie: ciało przestaje kolidować, broń chowam, obraz daje kamera samolotu.
+func enter_vehicle(v) -> void:
+	vehicle = v
+	collision_layer = 0
+	collision_mask = 0
+	velocity = Vector3.ZERO
+	_move = Vector3.ZERO
+	_trigger = false
+	reloading = -1.0
+	rig.reload_p = -1.0
+	bandaging = -1.0
+	if gun:
+		gun.visible = false
+
+
+## Wysiadam (place: staję obok kabiny) albo wypadam z kabiny (śmierć, wybuch).
+func leave_vehicle(place: bool) -> void:
+	var v = vehicle
+	vehicle = null
+	if is_remote:
+		collision_layer = 4
+		collision_mask = 0
+	else:
+		collision_layer = 2
+		collision_mask = 1 | 4 | 32
+	if gun:
+		gun.visible = true
+	var f: Vector3 = -v.global_basis.z
+	var y := atan2(-f.x, -f.z)
+	if place:
+		global_position = v.exit_point()
+		_net_pos = global_position
+	velocity = Vector3.ZERO
+	_move = Vector3.ZERO
+	visual.rotation = Vector3(0, y, 0)
+	yaw = y
+	_yaw = y
+	if not is_remote and _cam:
+		_pitch = -0.05
+		_cam_yaw.global_position = global_position + Vector3(0, 1.6, 0)
+		_cam.current = true
+
+
+## Zginąłem w rozbitym samolocie.
+func vehicle_death() -> void:
+	vitals.cause = "katastrofa lotnicza"
+	vitals._die()
+	_note("katastrofa lotnicza", [])
+	_collapse(Vector3.UP, chest_pos(), "torso", 4000.0, true)

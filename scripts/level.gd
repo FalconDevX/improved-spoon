@@ -13,6 +13,11 @@ var covers: Array = []            # {pos, normal, h}
 var roofs: Array = []             # {mesh, aabb}
 var spawn_player := Vector3(-8, 0, 104)
 var posts: Array = []             # miejsca, w których startują oddziały wroga
+var road_img: Image              # maska dróg 256 × 256 na całą mapę (trawa, minimapa)
+var ground_body: StaticBody3D
+var plane_spots: Array = []       # stanowiska samolotów (Transform3D, oś kadłuba nad ziemią)
+const GROUND_SIZE := 6000.0
+const AIRFIELD := Rect2(18, -14, 106, 50)   # lotnisko na wschodzie: pas wzdłuż drogi, bez przeszkód
 var _mats := {}
 var _rng := RandomNumberGenerator.new()
 var _baked := false
@@ -87,6 +92,23 @@ void fragment() {
 		c *= 0.82 + 0.36 * h(vec3(id, 1.7));
 		c = mix(vec3(0.58, 0.56, 0.52) * (0.8 + 0.3 * n), c, m);
 	}
+	if (abs(wn.y) < 0.5) {
+		// zacieki od deszczu: pionowe smugi spływające spod dachu
+		vec2 sp = plane_of(wp, wn);
+		float streak = n3(vec3(sp.x * 3.1, sp.y * 0.18, 5.0)) * n3(vec3(sp.x * 11.0, sp.y * 0.6, 9.0));
+		c *= 1.0 - grime * 0.55 * smoothstep(0.18, 0.5, streak);
+		// błoto rozchlapane przy ziemi i zielonkawy nalot w cieniu
+		float splash = smoothstep(0.75, 0.0, wp.y) * smoothstep(0.35, 0.7, n3(wp * 5.0));
+		c = mix(c, vec3(0.24, 0.2, 0.15), splash * grime * 0.8);
+		c = mix(c, vec3(0.2, 0.25, 0.14), smoothstep(0.62, 0.8, n3(wp * 0.9 + 3.0)) * smoothstep(1.5, 0.0, wp.y) * grime * 0.5);
+		rough = mix(rough, 1.0, splash * 0.5);
+	} else if (wn.y > 0.5) {
+		// góra skrzyń, murków, dachów: kurz i liście
+		c *= 0.9 + 0.12 * n3(wp * 9.0);
+	}
+	// starte krawędzie i ubytki: jaśniejsze, bardziej szorstkie plamy
+	float chip = smoothstep(0.78, 0.86, n3(wp * 13.0 + 7.0));
+	c = mix(c, c * 1.25 + vec3(0.03), chip * 0.5 * grime);
 	c *= 1.0 - grime * (1.0 - smoothstep(0.0, 0.5, wp.y)) * step(abs(wn.y), 0.5);
 	c *= 0.92 + 0.16 * n3(wp * 61.0);
 	// wypukłości: normalna z różnic wysokości wzdłuż powierzchni (gasną z odległością — bez migotania)
@@ -134,6 +156,7 @@ void fragment() {
 	vec3 c = mix(grass, dirt, patchy);
 	vec2 uv = (p + half_size) / (2.0 * half_size);
 	float road = texture(road_mask, uv).r;
+	road *= step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);   // poza mapą bez dróg
 	float pebbles = smoothstep(0.62, 0.7, n2(p * 38.0));
 	vec3 gravel = mix(vec3(0.42, 0.39, 0.34), vec3(0.52, 0.49, 0.43), fine) * (0.85 + 0.25 * n2(p * 60.0));
 	gravel = mix(gravel, vec3(0.5, 0.48, 0.44), pebbles * 0.4);
@@ -486,7 +509,7 @@ func _ground() -> void:
 	var roads := [
 		[Vector2(-120, 0), Vector2(120, -6), 4.5], [Vector2(-10, 120), Vector2(-10, -120), 4.0],
 		[Vector2(-10, -5), Vector2(68, -40), 3.5], [Vector2(-10, 40), Vector2(-70, 40), 3.0],
-		[Vector2(-10, -50), Vector2(-75, -60), 2.5],
+		[Vector2(-10, -50), Vector2(-75, -60), 2.5], [Vector2(24, -2), Vector2(120, -2), 11.0],
 	]
 	for y in 256:
 		for x in 256:
@@ -500,6 +523,7 @@ func _ground() -> void:
 				var dist := p.distance_to(a + ab * t)
 				v = maxf(v, 1.0 - smoothstep(float(r[2]) * 0.5, float(r[2]) * 0.5 + 1.2, dist))
 			img.set_pixel(x, y, Color(v, v, v))
+	road_img = img
 	var tex := ImageTexture.create_from_image(img)
 	var sh := Shader.new()
 	sh.code = GROUND_SHADER
@@ -509,17 +533,18 @@ func _ground() -> void:
 	m.set_shader_parameter("half_size", HALF)
 	var mi := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(HALF * 2.0 + 400.0, HALF * 2.0 + 400.0)
+	pm.size = Vector2(GROUND_SIZE, GROUND_SIZE)   # daleko poza mapą — widać z samolotu
 	mi.mesh = pm
 	mi.material_override = m
 	add_child(mi)
 	var fb := StaticBody3D.new()
+	ground_body = fb
 	fb.collision_layer = 1
 	fb.collision_mask = 0
 	fb.set_meta("mat", "dirt")
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = Vector3(HALF * 2.0 + 400.0, 1.0, HALF * 2.0 + 400.0)
+	bs.size = Vector3(GROUND_SIZE, 1.0, GROUND_SIZE)
 	cs.shape = bs
 	cs.position.y = -0.5
 	fb.add_child(cs)
@@ -616,7 +641,7 @@ func _fields() -> void:
 		_wall(a, b, 1.0, ops, "stone", "stone", 0.5)
 	for k in 26:
 		var p := Vector2(_rng.randf_range(-110, 110), _rng.randf_range(-110, 110))
-		if p.distance_to(Vector2(-10, -5)) < 45.0 or p.distance_to(Vector2(68, -40)) < 34.0:
+		if p.distance_to(Vector2(-10, -5)) < 45.0 or p.distance_to(Vector2(68, -40)) < 34.0 or AIRFIELD.grow(6.0).has_point(p):
 			continue
 		_tree(p, _rng.randf_range(0.9, 1.3))
 
@@ -624,7 +649,7 @@ func _fields() -> void:
 func _scatter() -> void:
 	for k in 22:
 		var p := Vector2(_rng.randf_range(-105, 105), _rng.randf_range(-105, 105))
-		if p.distance_to(Vector2(-10, -5)) < 40.0 or p.distance_to(Vector2(68, -40)) < 30.0:
+		if p.distance_to(Vector2(-10, -5)) < 40.0 or p.distance_to(Vector2(68, -40)) < 30.0 or AIRFIELD.grow(4.0).has_point(p):
 			continue
 		match k % 4:
 			0: _car(p, _rng.randf() * TAU)
@@ -636,11 +661,27 @@ func _scatter() -> void:
 	_crate(Vector3(-3, 0, 102), 1.1, 0.3)
 
 
-## Granica mapy: wysoki nasyp (niewidzialna ściana + wał ziemny).
+## Granica mapy: wysoki nasyp (niewidzialna ściana + wał ziemny); na wschodzie przerwa na pas startowy.
 func _perimeter() -> void:
+	var g0 := AIRFIELD.position.y
+	var g1 := AIRFIELD.end.y
 	for s in [[Vector3(0, 1.5, -HALF), Vector3(HALF * 2, 3, 3)], [Vector3(0, 1.5, HALF), Vector3(HALF * 2, 3, 3)],
-			[Vector3(-HALF, 1.5, 0), Vector3(3, 3, HALF * 2)], [Vector3(HALF, 1.5, 0), Vector3(3, 3, HALF * 2)]]:
+			[Vector3(-HALF, 1.5, 0), Vector3(3, 3, HALF * 2)],
+			[Vector3(HALF, 1.5, (-HALF + g0) * 0.5), Vector3(3, 3, g0 + HALF)], [Vector3(HALF, 1.5, (g1 + HALF) * 0.5), Vector3(3, 3, HALF - g1)]]:
 		_box(s[0], s[1], "dirt", "sand", 0.0, 0.0, false)
+	_airfield()
+
+
+## Lotnisko: trzy myśliwce nosem na wschód, worki z piaskiem i beczki z paliwem przy stanowiskach.
+func _airfield() -> void:
+	for z in [-2.0, 11.0, 24.0]:
+		var t := Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(30.0, 1.55, z))
+		plane_spots.append(t)
+	_sandbags(Vector2(21, 30), Vector2(21, 36))
+	_sandbags(Vector2(21, -12), Vector2(21, -7))
+	for p in [Vector2(22, 4.5), Vector2(22.8, 5.3), Vector2(22, 17.5)]:
+		_cyl(Vector3(p.x, 0, p.y), 0.3, 0.9, "metal", "container_r", 0.0012)
+	_crate(Vector3(23, 0, 30), 1.1, 0.2)
 
 
 ## Najlepsza osłona dla bota: blisko niego, zasłania przed zagrożeniem, nie zajęta przez innych.

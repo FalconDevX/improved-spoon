@@ -4,6 +4,7 @@ extends Control
 
 const Npc = preload("res://scripts/npc.gd")
 const Vitals = preload("res://scripts/vitals.gd")
+const Aircraft = preload("res://scripts/plane.gd")
 
 var player = null
 var xray := false
@@ -12,6 +13,12 @@ var code := ""
 var status := ""
 var respawn_in := -1.0
 var _cards: Array = []
+var show_help := false      # F1: lista sterowania (domyślnie schowana — jak w CoD)
+
+
+func _unhandled_input(e: InputEvent) -> void:
+	if e.is_action_pressed("help"):
+		show_help = not show_help
 
 
 func _ready() -> void:
@@ -31,10 +38,17 @@ func _draw() -> void:
 	if xray:
 		draw_rect(Rect2(Vector2.ZERO, vs), Color(0.0, 0.04, 0.1, 0.22))
 		draw_string(font, Vector2(vs.x * 0.5 - 70, 70), "RENTGEN  [Tab]", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.5, 0.85, 1.0, 0.95))
-	_draw_help(font)
-	_draw_crosshair(vs)
+	var pl = player.vehicle
+	if pl != null and is_instance_valid(pl):
+		_draw_plane(font, vs, pl)
+	else:
+		if show_help:
+			_draw_help(font)
+		_draw_crosshair(vs)
+		_draw_weapon(font, vs)
+		_draw_plane_hint(font, vs)
 	_draw_damage_dirs(vs)
-	_draw_weapon(font, vs)
+	_draw_kills(font, vs)
 	_draw_vitals(font, vs)
 	if player.message_t > 0.0:
 		var a := clampf(player.message_t, 0.0, 1.0)
@@ -55,10 +69,12 @@ func _draw_help(font: Font) -> void:
 	var help := [
 		"WASD - ruch   Shift - bieg (w celowaniu: wstrzymanie oddechu)   Spacja - skok   Ctrl - kucanie   X - chód",
 		"LPM - strzał   PPM - celowanie   R - przeładowanie   B - tryb ognia   1-0 / kółko - broń",
-		"V - pierwsza osoba / zza ramienia   L - laser   H - opatrunek   E - amunicja poległych   Tab - rentgen   Esc - kursor",
+		"V - pierwsza osoba / zza ramienia   L - laser   H - opatrunek   E - samolot / amunicja poległych   Tab - rentgen   Esc - kursor",
 	]
-	for i in help.size():
-		draw_string(font, Vector2(20, 28 + i * 20), help[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.92, 1.0, 0.6))
+	if show_help:
+		draw_rect(Rect2(10, 244, 820, help.size() * 20 + 14), Color(0, 0, 0, 0.45))
+	for i in help.size() if show_help else 0:
+		draw_string(font, Vector2(20, 262 + i * 20), help[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.92, 1.0, 0.85))
 
 
 func _center_text(font: Font, t: String, at: Vector2, size: int, col: Color) -> void:
@@ -76,10 +92,7 @@ func _draw_crosshair(vs: Vector2) -> void:
 		for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
 			draw_line(c + d * g, c + d * (g + 7.0), col, 1.5, true)
 		draw_circle(c, 1.2, col)
-	if player.hit_marker > 0.0:
-		var hc := Color(1, 0.25, 0.2, player.hit_marker) if player.hit_kill else Color(1, 1, 1, player.hit_marker)
-		for d: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
-			draw_line(c + d * 6.0, c + d * 13.0, hc, 2.0, true)
+	_draw_hit_marker(c)
 
 
 ## Obraz lunety: czarne tło, siatka celownicza z kreskami.
@@ -130,23 +143,42 @@ func _draw_weapon(font: Font, vs: Vector2) -> void:
 	var g = player.gun
 	if g == null:
 		return
-	var x := vs.x - 300
-	var y := vs.y - 90
-	draw_rect(Rect2(x - 12, y - 30, 300, 100), Color(0, 0, 0, 0.35))
-	draw_string(font, Vector2(x, y), String(g.data["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.92, 0.7))
-	var mode: String = {"auto": "seria", "semi": "pojedynczy", "pump": "pompka", "bolt": "zamek"}.get(g.fire_mode(), g.fire_mode())
-	draw_string(font, Vector2(x, y + 22), "%s   [B]" % mode, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.75))
+	# panel w stylu CoD: skośny pasek, duża liczba naboi, rządek nabojów w magazynku
+	var x := vs.x - 330
+	var y := vs.y - 110
+	var bg := PackedVector2Array([Vector2(x + 18, y - 22), Vector2(vs.x - 16, y - 22), Vector2(vs.x - 16, y + 74), Vector2(x, y + 74)])
+	draw_colored_polygon(bg, Color(0.02, 0.03, 0.03, 0.5))
+	draw_line(Vector2(x + 18, y - 22), Vector2(vs.x - 16, y - 22), Color(1, 0.85, 0.4, 0.7), 2.0)
 	var rounds: int = g.rounds + (1 if g.chambered else 0)
-	var col := Color(1, 1, 1) if rounds > 0 else Color(1, 0.35, 0.3)
-	draw_string(font, Vector2(x, y + 56), "%d" % rounds, HORIZONTAL_ALIGNMENT_LEFT, -1, 34, col)
-	var res := "/ %d" % g.reserve()
+	var cap: int = int(g.data["cap"]) + 1
+	var col := Color(1, 1, 1) if rounds > cap / 4 else (Color(1, 0.75, 0.3) if rounds > 0 else Color(1, 0.35, 0.3))
+	var rs := "%d" % rounds
+	draw_string(font, Vector2(vs.x - 150, y + 36), rs, HORIZONTAL_ALIGNMENT_RIGHT, 110, 46, col)
+	draw_string(font, Vector2(vs.x - 36, y + 36), "/", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 1, 1, 0.4))
+	draw_string(font, Vector2(vs.x - 150, y + 62), "%d" % g.reserve(), HORIZONTAL_ALIGNMENT_RIGHT, 125, 18, Color(0.85, 0.9, 1, 0.75))
+	draw_string(font, Vector2(x + 26, y - 2), String(g.data["name"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.92, 0.75))
+	var mode: String = {"auto": "SERIA", "semi": "POJEDYNCZY", "pump": "POMPKA", "bolt": "ZAMEK"}.get(g.fire_mode(), g.fire_mode())
+	draw_string(font, Vector2(x + 26, y + 16), mode + "  [B]", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.85, 0.9, 1, 0.6))
 	if g.data["feed"] == "mag":
-		res += "   (mag. %d)" % g.mags.size()
-	draw_string(font, Vector2(x + 64, y + 56), res, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.85, 0.9, 1, 0.85))
+		draw_string(font, Vector2(x + 26, y + 34), "MAGAZYNKI  %d" % g.mags.size(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.85, 0.9, 1, 0.6))
+	# naboje w magazynku jako pionowe kreski
+	var n := mini(cap, 40)
+	var bw := minf(150.0 / n, 6.0)
+	for k in n:
+		var full := k < int(round(float(rounds) / cap * n))
+		var bx := x + 26 + k * bw
+		draw_rect(Rect2(bx, y + 46, maxf(bw - 1.5, 1.0), 14), Color(1, 0.88, 0.55, 0.9) if full else Color(1, 1, 1, 0.12))
 	if player.reloading >= 0.0:
 		_center_text(font, "PRZEŁADOWANIE", Vector2(vs.x * 0.5, vs.y * 0.5 + 60), 16, Color(1, 0.9, 0.5))
+		var pr: float = clampf(player.rig.reload_p, 0.0, 1.0)
+		draw_rect(Rect2(vs.x * 0.5 - 60, vs.y * 0.5 + 68, 120, 3), Color(1, 1, 1, 0.2))
+		draw_rect(Rect2(vs.x * 0.5 - 60, vs.y * 0.5 + 68, 120 * pr, 3), Color(1, 0.9, 0.5))
 	elif rounds == 0:
 		_center_text(font, "PUSTY — R", Vector2(vs.x * 0.5, vs.y * 0.5 + 60), 16, Color(1, 0.45, 0.35))
+	elif rounds <= cap / 4:
+		_center_text(font, "MAŁO AMUNICJI", Vector2(vs.x * 0.5, vs.y * 0.5 + 60), 14, Color(1, 0.75, 0.3, 0.8))
+	if not show_help:
+		draw_string(font, Vector2(x + 26, y + 92), "F1 — sterowanie", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.4))
 
 
 func _bar(at: Vector2, w: float, frac: float, col: Color, label: String, font: Font) -> void:
@@ -238,6 +270,224 @@ func _draw_pvp(font: Font, vs: Vector2) -> void:
 		info += "  — czekam na przeciwnika..."
 	if status != "":
 		info += "   " + status
-	draw_string(font, Vector2(vs.x * 0.5 - 200, 66), info, HORIZONTAL_ALIGNMENT_LEFT, 400, 14, Color(0.8, 0.9, 1, 0.75))
+	draw_string(font, Vector2(vs.x * 0.5 - 200, 132), info, HORIZONTAL_ALIGNMENT_LEFT, 400, 14, Color(0.8, 0.9, 1, 0.75))  # pod kompasem
 	if player.down:
 		_center_text(font, "WYELIMINOWANY — odrodzenie za %.0f s" % maxf(respawn_in, 0.0), Vector2(vs.x * 0.5, vs.y * 0.5 - 40), 26, Color(1, 0.4, 0.3))
+
+
+## Podpowiedź przy samolocie, do którego można wsiąść.
+func _draw_plane_hint(font: Font, vs: Vector2) -> void:
+	if player.down:
+		return
+	for pl in get_tree().get_nodes_in_group("plane"):
+		if pl.can_board(player):
+			_center_text(font, "[E] — wsiądź do samolotu", Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
+			return
+
+
+## Samolot: celownik karabinów, kierunek lotu, przyrządy, ostrzeżenia.
+func _draw_plane(font: Font, vs: Vector2, pl) -> void:
+	var help := [
+		"Mysz - kierunek lotu (samolot leci tam, gdzie patrzysz)   W/S - gaz   A/D - ster kierunku   strzałki - drążek ręcznie",
+		"LPM - karabiny maszynowe   Spacja - bomby (seria, nalot dywanowy) / na ziemi hamulce   V - kabina / widok z tyłu   E - wysiądź (na ziemi)",
+	]
+	if show_help:
+		draw_rect(Rect2(10, 244, 820, help.size() * 20 + 14), Color(0, 0, 0, 0.45))
+	for i in help.size() if show_help else 0:
+		draw_string(font, Vector2(20, 262 + i * 20), help[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.92, 1.0, 0.85))
+	var cam := get_viewport().get_camera_3d()
+	var c := vs * 0.5
+	var green := Color(0.55, 1.0, 0.55, 0.9)
+	# kierunek, w który patrzy pilot (tam leci samolot)
+	draw_arc(c, 9.0, 0.0, TAU, 24, Color(1, 1, 1, 0.75), 1.5, true)
+	# celownik: zbieżność karabinów przed nosem
+	if cam and not cam.is_position_behind(pl.gun_point()):
+		var g: Vector2 = cam.unproject_position(pl.gun_point())
+		draw_arc(g, 22.0, 0.0, TAU, 32, green, 1.5, true)
+		draw_circle(g, 2.0, green)
+		for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.DOWN]:
+			draw_line(g + d * 26.0, g + d * 36.0, green, 1.5, true)
+		if player.hit_marker > 0.0:
+			var hc := Color(1, 0.25, 0.2, player.hit_marker) if player.hit_kill else Color(1, 1, 1, player.hit_marker)
+			for d: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+				draw_line(g + d * 8.0, g + d * 16.0, hc, 2.0, true)
+	# przyrządy
+	var x := vs.x - 300
+	var y := vs.y - 170
+	draw_rect(Rect2(x - 12, y - 30, 300, 190), Color(0, 0, 0, 0.35))
+	var spd: float = pl.velocity.length() * 3.6
+	draw_string(font, Vector2(x, y), "PRĘDKOŚĆ  %d km/h" % int(spd), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.92, 0.7))
+	draw_string(font, Vector2(x, y + 24), "WYSOKOŚĆ  %d m" % int(maxf(pl.global_position.y - Aircraft.GEAR_H, 0.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.92, 0.7))
+	var climb: float = pl.velocity.y
+	draw_string(font, Vector2(x, y + 46), "wznoszenie %+.1f m/s" % climb, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
+	_bar(Vector2(x, y + 60), 160, pl.throttle, Color(0.9, 0.75, 0.3), "gaz %d%% [W/S]" % int(pl.throttle * 100.0), font)
+	var hpk: float = pl.hp / Aircraft.MAX_HP
+	_bar(Vector2(x, y + 80), 160, hpk, Color(0.45, 0.85, 0.45) if hpk > 0.5 else (Color(1, 0.7, 0.2) if hpk > 0.25 else Color(1, 0.3, 0.2)), "płatowiec %d%%" % int(maxf(hpk, 0.0) * 100.0), font)
+	var am: int = pl.ammo
+	draw_string(font, Vector2(x, y + 124), "%d" % am, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color(1, 1, 1) if am > 0 else Color(1, 0.35, 0.3))
+	draw_string(font, Vector2(x + 90, y + 124), "4 × KM 12,7 mm", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
+	if not show_help:
+		draw_string(font, Vector2(x, y + 168), "F1 — sterowanie samolotem", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
+	var nb: int = pl.bombs
+	draw_string(font, Vector2(x, y + 146), "BOMBY  %d × 50 kg  [Spacja]" % nb, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.85, 0.5) if nb > 0 else Color(1, 0.4, 0.3))
+	if cam:
+		_draw_bomb_sight(cam, pl, nb)
+		_draw_air_targets(font, cam, pl)
+	if pl.on_ground and pl.velocity.length() < 2.0 and pl.global_position.distance_to(pl.home.origin) < 45.0 and (am < Aircraft.AMMO or pl.hp < Aircraft.MAX_HP):
+		_center_text(font, "Dozbrajanie i naprawa...", Vector2(c.x, c.y + 180), 16, Color(0.8, 1, 0.8))
+	# ostrzeżenia
+	var warns := PackedStringArray()
+	if pl.hp <= 0.0:
+		warns.append("SAMOLOT W OGNIU — SPADASZ")
+	elif pl.hp < Aircraft.MAX_HP * 0.25:
+		warns.append("SILNIK USZKODZONY")
+	if pl.stall:
+		warns.append("PRZECIĄGNIĘCIE — OPUŚĆ NOS")
+	if pl.warn != "":
+		warns.append(pl.warn)
+	if not pl.on_ground and pl.global_position.y < 25.0 and pl.velocity.y < -8.0:
+		warns.append("ZIEMIA — PODCIĄGNIJ")
+	if am <= 0:
+		warns.append("BRAK AMUNICJI — WYLĄDUJ NA LOTNISKU")
+	var blink := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)
+	for i in warns.size():
+		_center_text(font, warns[i], Vector2(c.x, c.y - 120 - i * 28), 22, Color(1, 0.35, 0.25, blink))
+	if pl.on_ground and pl.throttle < 0.05 and pl.velocity.length() < 1.0:
+		_center_text(font, "W — gaz do startu, spójrz lekko w górę przy ~110 km/h", Vector2(c.x, c.y + 150), 16, Color(0.85, 1.0, 0.8, 0.85))
+
+
+## Celownik bombowy: krzyż w przewidywanym miejscu upadku bomb.
+func _draw_bomb_sight(cam: Camera3D, pl, nb: int) -> void:
+	if pl.on_ground or nb <= 0:
+		return
+	var ip: Vector3 = pl.bomb_impact()
+	if cam.is_position_behind(ip):
+		return
+	var sp := cam.unproject_position(ip)
+	var col := Color(1.0, 0.8, 0.3, 0.9)
+	draw_arc(sp, 14.0, 0.0, TAU, 24, col, 1.5, true)
+	for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
+		draw_line(sp + d * 6.0, sp + d * 22.0, col, 1.5, true)
+	var font := get_theme_default_font()
+	draw_string(font, sp + Vector2(18, -10), "BOMBY", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
+
+
+## Wrogie samoloty: ramka z odległością i punkt wyprzedzenia (tam celuj, by trafić).
+func _draw_air_targets(font: Font, cam: Camera3D, pl) -> void:
+	var v0: float = 870.0
+	for o in get_tree().get_nodes_in_group("plane"):
+		if o == pl or o.destroyed or o.pilot == null or not is_instance_valid(o.pilot):
+			continue
+		var tp: Vector3 = o.global_position
+		var d: float = tp.distance_to(pl.global_position)
+		if d > 1500.0 or cam.is_position_behind(tp):
+			continue
+		var sp := cam.unproject_position(tp)
+		var col := Color(1.0, 0.3, 0.25, 0.9)
+		var s := clampf(1200.0 / maxf(d, 1.0), 10.0, 40.0)
+		for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+			draw_line(sp + c * s, sp + c * s - Vector2(c.x * s * 0.5, 0), col, 2.0, true)
+			draw_line(sp + c * s, sp + c * s - Vector2(0, c.y * s * 0.5), col, 2.0, true)
+		draw_string(font, sp + Vector2(s + 4, -s), "%d m" % int(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+		if d < 900.0:
+			# pocisk dziedziczy moją prędkość: liczę w układzie względnym
+			var rel_v: Vector3 = o.velocity - pl.velocity
+			var tof := d / v0
+			for i in 2:
+				tof = (tp + rel_v * tof).distance_to(pl.global_position) / v0
+			var lead: Vector3 = tp + rel_v * tof + Vector3.UP * 0.5 * 9.81 * tof * tof
+			if not cam.is_position_behind(lead):
+				var lp := cam.unproject_position(lead)
+				draw_arc(lp, 7.0, 0.0, TAU, 16, Color(1, 0.9, 0.3, 0.95), 2.0, true)
+				draw_line(sp, lp, Color(1, 0.9, 0.3, 0.35), 1.0, true)
+
+
+# ---------------------------------------------------------------- trafienia i zabójstwa (styl Battlefront II)
+
+const HIT_COLORS := [Color(1, 1, 1), Color(1.0, 0.82, 0.2), Color(1.0, 0.16, 0.12)]
+
+
+## Znacznik trafienia: cztery skośne kreski; biały / żółty / czerwony (eliminacja — większy,
+## grubszy, rozszerza się i gaśnie).
+func _draw_hit_marker(c: Vector2) -> void:
+	var hm: float = player.hit_marker
+	if hm <= 0.0:
+		return
+	var kind: int = player.hit_kind
+	var col: Color = HIT_COLORS[kind]
+	col.a = clampf(hm * 1.4, 0.0, 1.0)
+	var grow := (1.0 - hm) * (10.0 if kind == 2 else 4.0)
+	var r0 := (8.0 if kind == 2 else 6.0) + grow
+	var r1 := r0 + (11.0 if kind == 2 else 7.0)
+	var w := 3.0 if kind == 2 else 2.0
+	for d: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+		var dn := d.normalized()
+		draw_line(c + dn * r0 + Vector2(1, 1), c + dn * r1 + Vector2(1, 1), Color(0, 0, 0, col.a * 0.5), w + 1.0, true)
+		draw_line(c + dn * r0, c + dn * r1, col, w, true)
+
+
+## Czaszka (ikona eliminacji) w punkcie p, rozmiar s.
+func _skull(p: Vector2, s: float, col: Color) -> void:
+	var dark := Color(0.08, 0.0, 0.0, col.a)
+	draw_circle(p + Vector2(0, -s * 0.12), s * 0.5, col, true, -1.0, true)
+	draw_rect(Rect2(p + Vector2(-s * 0.3, s * 0.15), Vector2(s * 0.6, s * 0.38)), col)
+	draw_circle(p + Vector2(-s * 0.19, -s * 0.08), s * 0.15, dark, true, -1.0, true)
+	draw_circle(p + Vector2(s * 0.19, -s * 0.08), s * 0.15, dark, true, -1.0, true)
+	draw_colored_polygon(PackedVector2Array([p + Vector2(0, s * 0.08), p + Vector2(-s * 0.07, s * 0.22), p + Vector2(s * 0.07, s * 0.22)]), dark)
+	for i in 3:
+		var x := -s * 0.15 + i * s * 0.15
+		draw_line(p + Vector2(x, s * 0.36), p + Vector2(x, s * 0.53), dark, maxf(s * 0.05, 1.0))
+
+
+func _draw_kills(font: Font, vs: Vector2) -> void:
+	var cam := get_viewport().get_camera_3d()
+	var red := Color(1.0, 0.16, 0.12)
+	# czaszki nad zabitymi: wyskakują, unoszą się i gasną
+	if cam:
+		for m: Dictionary in player.kill_marks:
+			var wp: Vector3 = (m["pos"] as Vector3) + Vector3(0, 0.6, 0)
+			if cam.is_position_behind(wp):
+				continue
+			var t: float = player.KILL_MARK_TIME - float(m["t"])
+			var a := clampf(float(m["t"]) / 0.8, 0.0, 1.0)
+			var pop := 1.0 + 0.6 * maxf(0.0, 1.0 - t / 0.18)
+			var sp := cam.unproject_position(wp) - Vector2(0, t * 14.0)
+			var s := 26.0 * pop
+			var col := Color(red, a)
+			# romb za czaszką
+			var dia := PackedVector2Array([sp + Vector2(0, -s), sp + Vector2(s, 0), sp + Vector2(0, s), sp + Vector2(-s, 0)])
+			draw_colored_polygon(dia, Color(0, 0, 0, 0.45 * a))
+			draw_polyline(dia + PackedVector2Array([sp + Vector2(0, -s)]), col, 2.0, true)
+			_skull(sp, s * 0.9, col)
+			if m["head"]:
+				_center_text(font, "GŁOWA", sp + Vector2(0, s + 16.0), 13, col)
+	# komunikat pod celownikiem: ELIMINACJA +100 ...
+	var bt: float = player.kill_banner_t
+	if bt > 0.0:
+		var a := clampf(bt / 0.5, 0.0, 1.0)
+		var slide := maxf(0.0, (bt - 2.3) / 0.3) * 30.0
+		var y := vs.y * 0.5 + 64.0 + slide
+		var lines: Array = player.kill_banner
+		for i in lines.size():
+			var ln: Dictionary = lines[i]
+			var big := i == 0
+			var txt: String = ln["text"]
+			if int(ln["pts"]) > 0:
+				txt += "   +%d" % int(ln["pts"])
+			var col := Color(red, a) if big else Color(1, 0.9, 0.75, a * 0.9)
+			_center_text(font, txt, Vector2(vs.x * 0.5 + 1, y + 1), 24 if big else 16, Color(0, 0, 0, a * 0.6))
+			_center_text(font, txt, Vector2(vs.x * 0.5, y), 24 if big else 16, col)
+			y += 30.0 if big else 22.0
+	# lista zabójstw i punkty (prawy górny róg)
+	draw_string(font, Vector2(vs.x - 230, 58), "Punkty: %d" % player.score, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.9, 0.6, 0.9))
+	var fy := 90.0
+	for k: Dictionary in player.kill_feed:
+		var a := clampf(float(k["t"]), 0.0, 1.0)
+		var t: String = k["text"]
+		var w := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+		var x := vs.x - 24.0 - w - 30.0
+		draw_rect(Rect2(x - 8, fy - 17, w + 46, 24), Color(0, 0, 0, 0.45 * a))
+		draw_rect(Rect2(x - 8, fy - 17, 3, 24), Color(red, a))
+		draw_string(font, Vector2(x, fy), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, a))
+		_skull(Vector2(x + w + 18, fy - 5), 14.0, Color(red, a))
+		fy += 28.0

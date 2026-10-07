@@ -18,6 +18,8 @@ const CAL := {
 	"357": {"name": ".357 Magnum JSP", "mass": 0.0102, "k": 0.0018, "pen": 0.45, "cavity": 0.0065, "frag_v": 0.0, "armor": 1, "tracer": false},
 	"50ae": {"name": ".50 Action Express JHP", "mass": 0.0195, "k": 0.0017, "pen": 0.5, "cavity": 0.009, "frag_v": 0.0, "armor": 2, "tracer": false},
 	"338lm": {"name": ".338 Lapua Magnum", "mass": 0.0162, "k": 0.0005, "pen": 0.9, "cavity": 0.013, "frag_v": 0.0, "yaw_depth": 0.2, "armor": 4, "tracer": false},
+	"12.7x99": {"name": "12,7×99 mm (.50 BMG) M2", "mass": 0.042, "k": 0.00042, "pen": 1.7, "cavity": 0.03, "frag_v": 0.0, "yaw_depth": 0.25, "armor": 5, "tracer": true},
+	"frag": {"name": "odłamek bomby", "mass": 0.003, "k": 0.02, "pen": 0.24, "cavity": 0.007, "frag_v": 0.0, "armor": 3, "tracer": false},
 	"12ga": {"name": "12/70 śrut 00 Buck (9 × 8,4 mm)", "mass": 0.0035, "k": 0.0044, "pen": 0.32, "cavity": 0.0045, "frag_v": 0.0, "armor": 2, "pellets": 9, "pellet_spread": 0.011, "tracer": false},
 }
 
