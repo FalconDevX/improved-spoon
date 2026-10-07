@@ -72,7 +72,7 @@ func _draw() -> void:
 		draw_string(font, Vector2(vs.x - 232, 36), "WYELIMINOWANI", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.8, 0.82, 0.8, 0.8))
 		draw_string(font, Vector2(vs.x - 120, 38), "%d" % Npc.deaths, HORIZONTAL_ALIGNMENT_RIGHT, 90, 24, Color(1, 1, 1, 0.95))
 		if player.down:
-			_center_text(font, "WYELIMINOWANY (%s) — F5: od nowa" % ("nie żyjesz" if player.vitals.dead else "nieprzytomny"),
+			_center_text(font, "WYELIMINOWANY (%s) — SPACJA: odrodzenie, F5: od nowa" % ("nie żyjesz" if player.vitals.dead else "nieprzytomny"),
 				Vector2(vs.x * 0.5, vs.y * 0.5 - 40), 26, Color(1, 0.4, 0.3))
 	_draw_enemies(font)
 

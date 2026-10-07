@@ -558,6 +558,11 @@ func _unhandled_input(e: InputEvent) -> void:
 			_player._msg("Filtr kolorów: " + Settings.GRADES[Settings.grade])
 		get_viewport().set_input_as_handled()
 		return
+	# solo: po śmierci Spacja — odrodzenie (ciało zostaje, wynik się nie zeruje)
+	if e.is_action_pressed("jump") and not Player.net_on and is_instance_valid(_player) and _player.down and _player._death_t > 1.0:
+		_respawn_solo()
+		get_viewport().set_input_as_handled()
+		return
 	if e.is_action_pressed("ui_cancel") and (_menu == null or not is_instance_valid(_menu)) and is_instance_valid(_player):
 		_open_pause()
 		get_viewport().set_input_as_handled()
@@ -976,6 +981,34 @@ func _respawn_local() -> void:
 	_player = p
 	_hud.player = p
 	gd.call_func(net_respawn, me, pos, old.deaths)
+
+
+## Solo: nowy żołnierz w bezpiecznym miejscu (lotnisko albo posterunek daleko od wrogów).
+func _respawn_solo() -> void:
+	var old := _player
+	_retire(old)
+	old.set_process_unhandled_input(false)
+	old.camera().current = false
+	var spots: Array = [_level.spawn_player] + _level.posts.slice(0, 13)
+	var best: Vector3 = _level.spawn_player
+	var best_d := -1.0
+	for s: Vector3 in spots:
+		var near := INF
+		for b in get_tree().get_nodes_in_group("npc"):
+			if not b.down:
+				near = minf(near, s.distance_to(b.global_position))
+		if near > best_d:
+			best_d = near
+			best = s
+	var p := Player.new()
+	p.name = "Player"
+	p.position = best
+	p.rotation.y = -PI * 0.5
+	add_child(p)
+	p.kills = old.kills
+	p.score = old.score
+	_player = p
+	_hud.player = p
 
 
 ## (zdalnie) przeciwnik się odrodził.
