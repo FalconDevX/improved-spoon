@@ -8,6 +8,12 @@ const Weapons2 = preload("res://scripts/weapons.gd")
 
 static var level: Node
 static var deaths := 0
+static var skill := 1         # poziom trudności: 0 łatwy, 1 normalny, 2 trudny
+static var net_host := false  # PvP: ten komputer liczy boty i rozsyła ich stan (main.gd)
+
+const SKILL_AIM := [1.9, 1.0, 0.6]      # mnożnik błędu celowania
+const SKILL_REACT := [1.7, 1.0, 0.65]   # mnożnik czasu reakcji
+const SKILL_SPOT := [0.6, 1.0, 1.45]    # mnożnik szybkości wykrywania
 
 const WALK := 1.5
 const RUN := 4.3
@@ -46,43 +52,66 @@ var _crouch_t := 0.0
 var _groan_t := 5.0
 var _taken_cover := Vector3.INF
 var _flank := false
+var _retarget := 0.0
 static var _covers_taken: Array = []
+
+# PvP: u gościa bot jest kukiełką odtwarzającą stan przysyłany przez hosta
+var is_remote := false
+var weapon_id := ""          # z góry wybrana broń / wygląd (host przekazuje je gościowi)
+var tint_i := -1
+var _net_pos := Vector3.ZERO
+var _net_vel := Vector3.ZERO
 
 
 func _ready() -> void:
-	team = 1
+	team = 2   # wrogowie obu graczy (PvP: gracze to drużyny 0 i 1)
 	add_to_group("npc")
-	collision_layer = 4
-	collision_mask = 1 | 2 | 4
+	if is_remote:
+		collision_layer = 0   # kukiełka: pozycję ustawia host, bez blokowania gracza przy opóźnieniu
+		collision_mask = 0
+	else:
+		collision_layer = 4
+		collision_mask = 1 | 2 | 4
 	# ciemniejsze, oliwkowe mundury — odcinają się od piasku i trawy
 	var tints := [Color(0.5, 0.56, 0.4), Color(0.44, 0.5, 0.36), Color(0.55, 0.5, 0.4), Color(0.42, 0.45, 0.42)]
-	build_soldier(tints[randi() % tints.size()], soldier_look())
-	var r := randf()
-	var wid := "ak"
-	if r < 0.12:
-		wid = "mp9"
-	elif r < 0.22:
-		wid = "r870"
-	elif r < 0.34:
-		wid = "m4"
-	elif r < 0.42:
-		wid = "m24"
-		marksman = true
-	elif r < 0.47:
-		wid = "glock"
-	var g = Weapons2.make(wid)
+	if tint_i < 0:
+		tint_i = randi() % tints.size()
+	build_soldier(tints[tint_i % tints.size()], soldier_look())
+	if weapon_id == "":
+		weapon_id = roll_weapon()
+		helmet = randf() < 0.75
+		vest = randf() < 0.7
+	marksman = weapon_id == "m24"
+	var g = Weapons2.make(weapon_id)
 	equip(g)
-	helmet = randf() < 0.75
-	vest = randf() < 0.7
 	_post = global_position
 	yaw = rotation.y
 	rotation.y = 0.0
 	visual.rotation.y = yaw
 	rig.aim_w = 0.2
 	rig.aim_dir = Vector3.FORWARD
+	_net_pos = global_position
+
+
+static func roll_weapon() -> String:
+	var r := randf()
+	if r < 0.12:
+		return "mp9"
+	elif r < 0.22:
+		return "r870"
+	elif r < 0.34:
+		return "m4"
+	elif r < 0.42:
+		return "m24"
+	elif r < 0.47:
+		return "glock"
+	return "ak"
 
 
 func _physics_process(dt: float) -> void:
+	if is_remote:
+		_puppet_follow(dt)
+		return
 	_tick_vitals(dt)
 	if down:
 		if not vitals.dead:
@@ -94,8 +123,10 @@ func _physics_process(dt: float) -> void:
 	_tick_weapon(dt)
 	if level == null or not level.is_ready():
 		return
-	if _target == null or not is_instance_valid(_target):
-		_target = get_tree().get_first_node_in_group("player")
+	_retarget -= dt
+	if _target == null or not is_instance_valid(_target) or _target.is_dead() or _retarget <= 0.0:
+		_retarget = randf_range(2.0, 3.5)
+		_pick_target()
 	suppression = maxf(suppression - dt * 0.25, 0.0)
 	_state_t += dt
 	_perceive(dt)
@@ -131,6 +162,7 @@ func _perceive(dt: float) -> void:
 			rate *= 0.55
 		if state != "patrol":
 			rate *= 2.5
+		rate *= SKILL_SPOT[skill]
 		awareness = minf(awareness + rate * dt * 0.33, 1.0)
 		if awareness >= 1.0:
 			last_known = _target.global_position
@@ -221,7 +253,7 @@ func _enter_combat() -> void:
 	state = "combat"
 	_state_t = 0.0
 	awareness = 1.0
-	_react = randf_range(0.35, 0.8) * (1.4 - vitals.capacity() * 0.4)
+	_react = randf_range(0.35, 0.8) * (1.4 - vitals.capacity() * 0.4) * SKILL_REACT[skill]
 	_aim_err = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * 0.06
 	_alert_friends(45.0)
 	if randf() < (0.7 if not marksman else 0.9):
@@ -363,6 +395,7 @@ func _engage(dt: float, d: float) -> void:
 	var err: float = base * settle * (1.0 + suppression * 1.6) * (1.0 + _target.velocity.length() * 0.15) / maxf(cap, 0.25)
 	if limp_any():
 		err *= 2.5
+	err *= SKILL_AIM[skill]
 	_err_t -= dt
 	if _err_t <= 0.0:
 		_err_t = randf_range(0.25, 0.6)
@@ -529,5 +562,126 @@ func _collapse(dir: Vector3, at: Vector3, seg: String, energy: float, instant: b
 		return
 	_release_cover()
 	deaths += 1
+	if net_host and not is_remote and get_parent().has_method("bot_down"):
+		get_parent().bot_down(self, dir, at, seg, energy, instant)
 	super._collapse(dir, at, seg, energy, instant)
-	_alert_friends(20.0)
+	if not is_remote:
+		_alert_friends(20.0)
+
+
+## Cel: najbliższy żywy gracz (solo: gracz; PvP u hosta: także kukiełka gościa). Obecny cel
+## zostaje, chyba że inny jest wyraźnie bliżej.
+func _pick_target() -> void:
+	var best: Node3D = null
+	var best_d := INF
+	for n in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("net_player"):
+		if not is_instance_valid(n) or n.down or String(n.name).begins_with("Dead"):
+			continue
+		var d: float = n.global_position.distance_to(global_position)
+		if n == _target:
+			d *= 0.7
+		if d < best_d:
+			best_d = d
+			best = n
+	if best != _target:
+		_target = best
+		_sight_time = 0.0
+
+
+# ---------------------------------------------------------------- sieć (PvP)
+# Host liczy boty i rozsyła ich stan, strzały i upadki (main.gd); u gościa bot jest kukiełką.
+# Kule gościa trafiające kukiełkę idą do hosta (jak trafienia przeciwnika w PvP).
+
+## Host: strzał bota leci też u gościa.
+func _on_fired(origin: Vector3, dir: Vector3, tracer: bool) -> void:
+	if net_host and not is_remote and get_parent().has_method("bot_shot"):
+		get_parent().bot_shot(self, origin, dir, tracer)
+
+
+func bullet_hit(h: Dictionary) -> void:
+	if is_remote:
+		_puppet_hit(h)
+		return
+	# host: kula odtworzona ze strzału gościa — trafienie przyśle sam gość (net_bot_hit);
+	# odłamki granatów i rakiet liczy każdy komputer dla swoich botów
+	var sh = h.get("shooter")
+	if net_host and sh != null and is_instance_valid(sh) and sh.get("is_remote") == true \
+			and not h.get("_net", false) and h.get("cal", "") != "frag":
+		return
+	super.bullet_hit(h)
+
+
+## (kukiełka u gościa) moja kula trafiła bota: krew tutaj, obrażenia liczy host.
+func _puppet_hit(h: Dictionary) -> void:
+	if down:
+		return
+	var dir: Vector3 = h["dir"]
+	if h.get("armor", "") == "":
+		FX.I.blood_spray(h["entry"], -dir, 0.5)
+		if not h.get("stopped", false):
+			FX.I.blood_spray(h["exit"], dir, 0.8)
+		FX.I.play("hit", h["entry"], -4.0, 0.15)
+	rig.hit_react(visual.global_basis.inverse() * dir, h["seg"], 0.8)
+	var sh = h.get("shooter")
+	if sh == null or not is_instance_valid(sh) or not sh.is_in_group("player") or h.get("cal", "") == "frag":
+		return
+	if get_parent().has_method("send_bot_hit"):
+		var d := h.duplicate()
+		d.erase("shooter")
+		d["_net"] = true
+		get_parent().send_bot_hit(self, d)
+	last_hit_time = Time.get_ticks_msec() / 1000.0
+	if h.get("armor", "") == "":
+		last_hit_seg = h["seg"]
+	sh.on_hit_confirmed(self, hit_info(h))
+
+
+const NET_STRIDE := 14
+
+## Host: stan do paczki (NET_STRIDE liczb na bota — kolejność jak w net_apply).
+func net_pack(f: PackedFloat32Array, idx: int) -> void:
+	var a: Vector3 = rig.aim_dir
+	f.append_array([float(idx), global_position.x, global_position.y, global_position.z, velocity.x, velocity.z,
+		visual.rotation.y, a.x, a.y, a.z, rig.aim_w, rig.crouch, rig.kneel, rig.reload_p])
+
+
+## (kukiełka) stan z paczki hosta: pozycja, prędkość, obrót, celowanie, postawa, przeładowanie.
+func net_apply(f: PackedFloat32Array, i: int) -> void:
+	if down:
+		return
+	_net_pos = Vector3(f[i + 1], f[i + 2], f[i + 3])
+	_net_vel = Vector3(f[i + 4], 0.0, f[i + 5])
+	yaw = f[i + 6]
+	rig.aim_dir = Vector3(f[i + 7], f[i + 8], f[i + 9])
+	rig.aim_w = f[i + 10]
+	rig.crouch = f[i + 11]
+	rig.kneel = f[i + 12]
+	if gun:
+		rig.reload_kind = "mag" if gun.data["feed"] == "mag" else "shell"
+	rig.reload_p = f[i + 13]
+
+
+func _puppet_follow(dt: float) -> void:
+	if down:
+		return
+	var target := _net_pos + _net_vel * 0.05
+	if global_position.distance_to(target) > 4.0:
+		global_position = target
+	else:
+		global_position = global_position.lerp(target, 1.0 - exp(-10.0 * dt))
+	velocity = _net_vel
+	visual.rotation.y = lerp_angle(visual.rotation.y, yaw, 1.0 - exp(-12.0 * dt))
+	rig.vel = visual.global_basis.inverse() * velocity
+	rig.air = false
+
+
+## (kukiełka) host przysłał strzał bota: ten sam pocisk leci u mnie (trafienia we mnie liczy host).
+func net_fire(origin: Vector3, dir: Vector3, tracer: bool) -> void:
+	if down or gun == null:
+		return
+	fire_projectile(gun, origin, dir, tracer)
+	gun.flash()
+	_shot_fx(gun, origin, dir)
+	FX.I.play(gun.data["sound"], origin, 4.0, 0.06, 1.0, 40.0)
+	rig.kick(1.0)
+	set_meta("shot_t", Time.get_ticks_msec() / 1000.0)
