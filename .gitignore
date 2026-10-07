@@ -2,7 +2,10 @@
 addons/GD-Sync/keys.cfg
 
 # Godot: cache importu (odtwarza się sam)
-.godot/
+.godot/*
+# wyjątek: rejestr nazw klas (class_name) — bez niego autoload GD-Sync nie wczyta się
+# na świeżo sklonowanym projekcie („Brak wtyczki GD-Sync”)
+!.godot/global_script_class_cache.cfg
 *.tmp
 
 # zrzuty i skrypty testowe
