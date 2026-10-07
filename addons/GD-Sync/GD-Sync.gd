@@ -583,7 +583,7 @@ func _disable_remote_call_validator() -> void:
 		if _script_editor.is_connected("editor_script_changed", _on_editor_script_changed):
 			_script_editor.disconnect("editor_script_changed", _on_editor_script_changed)
 		
-		if _script_editor.is_connected("editor_script_saved", _on_script_saved):
+		if _script_editor.has_signal("editor_script_saved") and _script_editor.is_connected("editor_script_saved", _on_script_saved):
 			_script_editor.disconnect("editor_script_saved", _on_script_saved)
 	
 	if _file_system and _file_system.is_connected("filesystem_changed", _on_filesystem_changed):
