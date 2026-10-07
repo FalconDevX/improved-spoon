@@ -7,7 +7,13 @@ Strzelanka FPP w Godocie: solo przeciw botom albo PvP 1 na 1 (GD-Sync), samoloty
 - **Godot 4.7** (minimum 4.5 — wtyczka GD-Sync używa funkcji ze zmienną liczbą argumentów,
   na Godocie 4.4 i starszym wtyczka się nie wczyta). Wersja standardowa, nie .NET.
 
-## Pierwsze uruchomienie
+## Najszybciej: start.bat
+
+Pobierz repozytorium (git clone albo Code → Download ZIP) i uruchom **`start.bat`**.
+Przy pierwszym uruchomieniu sam pobierze Godota 4.7.2 (ok. 86 MB, z oficjalnego GitHuba
+Godota) do folderu gry, zaimportuje zasoby i włączy grę. Kolejne uruchomienia startują od razu.
+
+## Pierwsze uruchomienie w edytorze
 
 1. Sklonuj repozytorium i otwórz `project.godot` w Godocie 4.7.
 2. Poczekaj, aż edytor zaimportuje zasoby (pierwszy raz trwa chwilę).
