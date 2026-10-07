@@ -1,0 +1,9 @@
+# GD-Sync API keys. Never commit these.
+addons/GD-Sync/keys.cfg
+
+# Godot: cache importu (odtwarza się sam)
+.godot/
+*.tmp
+
+# zrzuty i skrypty testowe
+_tmp/

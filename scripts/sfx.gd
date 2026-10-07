@@ -1,0 +1,265 @@
+extends RefCounted
+## Proceduralna synteza dźwięków (bez plików audio).
+
+const RATE := 22050
+
+
+static func _wav(s: PackedFloat32Array) -> AudioStreamWAV:
+	var peak := 0.0001
+	for v in s:
+		peak = maxf(peak, absf(v))
+	var g := 0.9 / peak
+	var data := PackedByteArray()
+	data.resize(s.size() * 2)
+	for i in s.size():
+		data.encode_s16(i * 2, int(clampf(s[i] * g, -1.0, 1.0) * 32767.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = RATE
+	w.stereo = false
+	w.data = data
+	return w
+
+
+## Świst ostrza: szum przez rezonansowy filtr pasmowy z przesuwaną częstotliwością.
+static func whoosh() -> AudioStreamWAV:
+	var n := int(RATE * 0.4)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var low := 0.0
+	var band := 0.0
+	for i in n:
+		var t := float(i) / n
+		var fc := lerpf(350.0, 1600.0, sin(pow(t, 0.8) * PI))
+		var f := 2.0 * sin(PI * fc / RATE)
+		var x := rng.randf_range(-1.0, 1.0)
+		low += f * band
+		var high := x - low - 0.3 * band
+		band += f * high
+		var env := pow(sin(PI * pow(t, 0.65)), 2.0)
+		s[i] = band * env
+	return _wav(s)
+
+
+## Trafienie w ciało: głuche uderzenie + mlaśnięcie + syk krawędzi.
+static func flesh(heavy: bool) -> AudioStreamWAV:
+	var dur := 0.5 if heavy else 0.34
+	var n := int(RATE * dur)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21 if heavy else 13
+	var phase := 0.0
+	var lp := 0.0
+	var low := 0.0
+	var band := 0.0
+	var prev := 0.0
+	var base_f := 62.0 if heavy else 85.0
+	for i in n:
+		var t := float(i) / RATE
+		var freq := base_f * (1.0 + 1.6 * exp(-t * 30.0))
+		phase += TAU * freq / RATE
+		var thump := sin(phase) * exp(-t * (11.0 if heavy else 18.0))
+		var x := rng.randf_range(-1.0, 1.0)
+		lp += (x - lp) * 0.25
+		var slap := lp * exp(-t * 40.0)
+		var fc := 500.0 + 350.0 * sin(t * 45.0)
+		var f := 2.0 * sin(PI * fc / RATE)
+		low += f * band
+		var high := x - low - 0.25 * band
+		band += f * high
+		var squelch := band * exp(-t * 11.0) * 0.12
+		var hp := x - prev
+		prev = x
+		var cut := hp * exp(-t * 70.0) * 0.25
+		s[i] = thump * 1.0 + slap * 1.4 + squelch + cut
+	return _wav(s)
+
+
+## Upadek ciała na podłogę.
+static func thud() -> AudioStreamWAV:
+	var n := int(RATE * 0.6)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99
+	var phase := 0.0
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		phase += TAU * 52.0 * (1.0 + 0.8 * exp(-t * 25.0)) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.08
+		s[i] = sin(phase) * exp(-t * 8.0) + lp * 2.5 * exp(-t * 14.0)
+	return _wav(s)
+
+
+## Strzał z karabinka: ostry trzask (szum z bardzo szybkim zanikiem), niskie uderzenie
+## prochu i krótki pogłos.
+static func gunshot() -> AudioStreamWAV:
+	var n := int(RATE * 0.45)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 556
+	var lp := 0.0
+	var lp2 := 0.0
+	var phase := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var x := rng.randf_range(-1.0, 1.0)
+		lp += (x - lp) * 0.55
+		lp2 += (x - lp2) * 0.04
+		phase += TAU * 90.0 * (1.0 + 2.0 * exp(-t * 60.0)) / RATE
+		var crack := lp * exp(-t * 90.0) * 1.6
+		var boom := sin(phase) * exp(-t * 22.0) * 0.9
+		var tail := lp2 * 3.0 * exp(-t * 9.0) * smoothstep(0.0, 0.01, t)
+		s[i] = crack + boom + tail
+	return _wav(s)
+
+
+## Kula w ziemi / ścianie: krótkie suche stuknięcie.
+static func ricochet() -> AudioStreamWAV:
+	var n := int(RATE * 0.12)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.3
+		s[i] = lp * exp(-t * 55.0)
+	return _wav(s)
+
+
+## Wystrzał: trzask gazów wylotowych, niskie uderzenie, echo. dur: długość ogona, pitch: barwa
+## (mniejsza = cięższy kaliber).
+static func shot(dur: float, pitch: float, seed_: int) -> AudioStreamWAV:
+	var n := int(RATE * (0.25 + dur))
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_
+	var lp := 0.0
+	var lp2 := 0.0
+	var phase := 0.0
+	var echo := PackedFloat32Array()
+	echo.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		var x := rng.randf_range(-1.0, 1.0)
+		lp += (x - lp) * clampf(0.6 * pitch, 0.1, 0.9)
+		lp2 += (x - lp2) * 0.03 * pitch
+		phase += TAU * 70.0 * pitch * (1.0 + 2.5 * exp(-t * 50.0)) / RATE
+		var crack := lp * exp(-t * 110.0 * pitch) * 1.8
+		var boom := sin(phase) * exp(-t * 18.0 / pitch) * 1.1
+		var tail := lp2 * 3.5 * exp(-t * 7.0 / (dur + 0.2)) * smoothstep(0.0, 0.015, t)
+		s[i] = crack + boom + tail
+	# echo od otoczenia
+	for i in n:
+		var j := i - int(RATE * 0.11)
+		var k := i - int(RATE * 0.23)
+		var e := 0.0
+		if j > 0:
+			e += s[j] * 0.22
+		if k > 0:
+			e += s[k] * 0.12
+		echo[i] = s[i] + e
+	return _wav(echo)
+
+
+## Trzask naddźwiękowego pocisku przelatującego obok (fala uderzeniowa) + świst.
+static func crack() -> AudioStreamWAV:
+	var n := int(RATE * 0.16)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99
+	var hp := 0.0
+	var prev := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var x := rng.randf_range(-1.0, 1.0)
+		hp = 0.7 * (hp + x - prev)
+		prev = x
+		var nwave := (1.0 if t < 0.0004 else (-0.9 if t < 0.0009 else 0.0)) * 2.0
+		s[i] = nwave + hp * exp(-t * 60.0) * 0.8 + sin(TAU * 3200.0 * t) * exp(-t * 90.0) * 0.2
+	return _wav(s)
+
+
+## Mechaniczne kliknięcie (spust, zatrzask magazynka, zamek): kilka krótkich impulsów.
+static func click(dur: float, freq: float, seed_: int) -> AudioStreamWAV:
+	var n := int(RATE * dur)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_
+	var hits := [0.0, dur * rng.randf_range(0.3, 0.6)]
+	for i in n:
+		var t := float(i) / RATE
+		var v := 0.0
+		for h: float in hits:
+			if t >= h:
+				var u := t - h
+				v += (sin(TAU * freq * u) * 0.6 + rng.randf_range(-1, 1) * 0.5) * exp(-u * 160.0)
+		s[i] = v
+	return _wav(s)
+
+
+## Kula w twardej przeszkodzie / drewnie.
+static func impact(freq: float, seed_: int) -> AudioStreamWAV:
+	var n := int(RATE * 0.18)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_
+	var lp := 0.0
+	var a := clampf(freq / RATE * 6.0, 0.05, 0.9)
+	for i in n:
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * a
+		s[i] = lp * exp(-t * 40.0) + sin(TAU * freq * 0.3 * t) * exp(-t * 70.0) * 0.4
+	return _wav(s)
+
+
+## Kula w metalu: dzwoniący odgłos.
+static func ping() -> AudioStreamWAV:
+	var n := int(RATE * 0.5)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	for i in n:
+		var t := float(i) / RATE
+		var v := rng.randf_range(-1.0, 1.0) * exp(-t * 120.0)
+		v += sin(TAU * 1830.0 * t) * exp(-t * 9.0) * 0.35 + sin(TAU * 2710.0 * t) * exp(-t * 12.0) * 0.25
+		v += sin(TAU * 960.0 * t) * exp(-t * 7.0) * 0.2
+		s[i] = v
+	return _wav(s)
+
+
+## Jęk rannego: niski, drżący ton z formantem.
+static func groan() -> AudioStreamWAV:
+	var n := int(RATE * 0.9)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 404
+	var ph := 0.0
+	var band := 0.0
+	var low := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var f0 := 115.0 - 25.0 * t + sin(t * 31.0) * 4.0
+		ph += TAU * f0 / RATE
+		var src := (fmod(ph, TAU) / TAU - 0.5) + rng.randf_range(-0.15, 0.15)
+		var fc := 650.0 - 200.0 * t
+		var f := 2.0 * sin(PI * fc / RATE)
+		low += f * band
+		var high := src - low - 0.25 * band
+		band += f * high
+		var env := smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.55, 0.9, t))
+		s[i] = (band * 0.7 + low * 0.3) * env
+	return _wav(s)
