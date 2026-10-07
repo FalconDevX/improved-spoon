@@ -44,6 +44,8 @@ func _draw() -> void:
 			_draw_heli(font, vs, pl)
 		elif pl.get("is_emplacement") == true:
 			_draw_aa(font, vs, pl)
+		elif pl.get("is_car") == true:
+			_draw_car(font, vs, pl)
 		else:
 			_draw_plane(font, vs, pl)
 	else:
@@ -331,7 +333,7 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 		_center_text(font, "[R] przytrzymaj — napraw %s (%d%%)" % [what, int(k * 100.0)], at, 17, Color(0.8, 0.95, 1.0))
 		draw_rect(Rect2(at.x - 80, at.y + 8, 160, 5), Color(1, 1, 1, 0.2))
 		draw_rect(Rect2(at.x - 80, at.y + 8, 160 * k, 5), Color(0.5, 0.9, 1.0) if player.repair_t > 0.0 else Color(0.8, 0.8, 0.8, 0.7))
-	for pl in get_tree().get_nodes_in_group("plane") + get_tree().get_nodes_in_group("emplacement"):
+	for pl in get_tree().get_nodes_in_group("plane") + get_tree().get_nodes_in_group("emplacement") + get_tree().get_nodes_in_group("car"):
 		if pl.can_board(player):
 			_center_text(font, "[F] — wsiądź do %s" % String(pl.get("board_name") if pl.get("board_name") != null else "samolotu"),Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
 			return
@@ -546,6 +548,19 @@ func _draw_heli(font: Font, vs: Vector2, pl) -> void:
 	if pl.on_ground and pl.rpm < 0.9:
 		_center_text(font, "Rozkręcanie wirnika... potem Spacja — start", Vector2(c.x, c.y + 150), 16, Color(0.85, 1.0, 0.8, 0.85))
 	_draw_countermeasures(font, vs, pl, Vector2(x, y - 52))
+
+
+## Samochód: prędkościomierz, stan, podpowiedź.
+func _draw_car(font: Font, vs: Vector2, car) -> void:
+	var x := vs.x - 300
+	var y := vs.y - 100
+	draw_rect(Rect2(x - 12, y - 30, 300, 100), Color(0, 0, 0, 0.35))
+	draw_string(font, Vector2(x, y), "%d km/h" % int(car.linear_velocity.length() * 3.6), HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color(1, 0.92, 0.7))
+	var hpk: float = car.hp / car.MAX_HP
+	_bar(Vector2(x, y + 18), 160, hpk, Color(0.45, 0.85, 0.45) if hpk > 0.5 else (Color(1, 0.7, 0.2) if hpk > 0.25 else Color(1, 0.3, 0.2)), "pojazd %d%%" % int(maxf(hpk, 0.0) * 100.0), font)
+	draw_string(font, Vector2(x, y + 52), "W/S gaz/hamulec  A/D skręt  Spacja ręczny  V widok  F wysiądź", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.55))
+	if car.hp < car.MAX_HP * 0.25:
+		_center_text(font, "POJAZD PŁONIE — WYSIADAJ", Vector2(vs.x * 0.5, vs.y * 0.5 - 120), 22, Color(1, 0.35, 0.25, 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)))
 
 
 ## Stanowisko przeciwlotnicze: celownik, cele z wyprzedzeniem (działko), namierzanie (wyrzutnia), amunicja.

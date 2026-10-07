@@ -30,6 +30,8 @@ var aa_spots: Array = [["gun", Vector3(8, 0, -42), 0.6], ["gun", Vector3(50, 0, 
 	["sam", Vector3(110, 0, -30), -1.2], ["sam", Vector3(-4, 0, 48), 3.0]]
 # transportowiec C-130 na płycie przy hangarach (oś kadłuba 3 m nad ziemią, nosem na wschód)
 var transport_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(300, 3.0, -26))]
+# wojskowe terenowe (Humvee) przy wschodniej bramie bazy, przodem na wschód
+var car_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-4, 0.4, 34)), Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(4, 0.4, 40))]
 var no_grass: Array = []          # prostokąty (XZ) bez trawy: lądowiska
 var heli_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(26, 1.2, -30)),
 	Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(26, 1.2, -48))]

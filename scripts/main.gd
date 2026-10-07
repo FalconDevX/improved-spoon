@@ -13,6 +13,7 @@ const Level = preload("res://scripts/level.gd")
 const Aircraft = preload("res://scripts/plane.gd")
 const Heli = preload("res://scripts/heli.gd")
 const C130 = preload("res://scripts/c130.gd")
+const Car = preload("res://scripts/car.gd")
 const AA = preload("res://scripts/aa.gd")
 const BigMap = preload("res://scripts/bigmap.gd")
 const AmmoCrate = preload("res://scripts/ammo_crate.gd")
@@ -498,6 +499,14 @@ func _spawn_planes() -> void:
 		pl.paint = PLANE_PAINT[i % PLANE_PAINT.size()]
 		pl.transform = _level.plane_spots[i]
 		add_child(pl)
+	for old in get_tree().get_nodes_in_group("car"):
+		remove_child(old)
+		old.queue_free()
+	for i in _level.car_spots.size():
+		var c := Car.new()
+		c.name = "Car%d" % (i + 1)
+		c.transform = _level.car_spots[i]
+		add_child(c)
 	for old in get_tree().get_nodes_in_group("emplacement"):
 		remove_child(old)
 		old.queue_free()

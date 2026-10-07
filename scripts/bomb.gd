@@ -140,7 +140,7 @@ func _explode(pos: Vector3) -> void:
 			p._trauma = minf(p._trauma + 0.9 * (1.0 - dp / 80.0), 1.0)
 	# samoloty obok (obrażenia liczy komputer bombowca i rozsyła)
 	if my_bomb:
-		for pl in get_tree().get_nodes_in_group("plane"):
+		for pl in get_tree().get_nodes_in_group("plane") + get_tree().get_nodes_in_group("car"):
 			var dpl: float = pl.global_position.distance_to(pos)
 			if dpl < plane_r and not pl.destroyed:
 				pl._damage((plane_r - dpl) * 22.0)
