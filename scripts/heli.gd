@@ -553,24 +553,38 @@ func _simulate(dt: float) -> void:
 		up = -0.8
 		fwd = 0.0
 		side = 0.0
-	elif live and rpm > 0.3:
+	var yaw_rate := 0.0
+	if hp > 0.0 and live and rpm > 0.3:
 		var dy := wrapf(_aim_yaw - _yaw, -PI, PI)
-		_yaw += clampf(dy, -TURN * dt, TURN * dt)
+		var step := clampf(dy, -TURN * dt, TURN * dt)
+		_yaw += step
+		yaw_rate = step / maxf(dt, 0.0001)
+	var hv := Vector3(velocity.x, 0, velocity.z)
+	var spd := hv.length()
+	# zakręt skoordynowany: przy prędkości śmigłowiec przechyla się w stronę skrętu
+	var bank := clampf(yaw_rate * spd * 0.012, -0.45, 0.45)
 	if on_ground:
 		_tilt = _tilt.move_toward(Vector2.ZERO, dt * 2.0)
 	else:
-		_tilt = _tilt.move_toward(Vector2(fwd * MAX_TILT, side * MAX_TILT * 0.8), dt * 1.3)
+		_tilt = _tilt.move_toward(Vector2(fwd * MAX_TILT, side * MAX_TILT * 0.8 + bank), dt * 1.3)
 	global_basis = Basis.from_euler(Vector3(-_tilt.x, _yaw, -_tilt.y))
-	var by := global_basis.y
-	# poziomo: składowa ciągu wirnika z pochylenia; pionowo: zadana prędkość wznoszenia (kolektyw)
-	var acc := Vector3(by.x, 0.0, by.z) * GRAVITY * 1.9 * lift
-	var hv := Vector3(velocity.x, 0, velocity.z)
-	hv += acc * dt
-	hv -= hv * DRAG * dt
+	# poziomo: ciąg wirnika pochylonego o kąt (g·tg), w układzie kursu śmigłowca
+	var head := Basis(Vector3.UP, _yaw)
+	var lv := head.inverse() * hv                         # x — w bok, z — do tyłu (+) / przodu (−)
+	var thrust := GRAVITY * lift * 1.5
+	lv.z += -tan(_tilt.x) * thrust * dt
+	lv.x += tan(_tilt.y - bank) * thrust * dt + bank * GRAVITY * 0.3 * dt
+	# opór: do przodu mały (opływowy kadłub), w bok duży i rosnący z prędkością — kadłub i belka
+	# ogonowa ustawiają się „z wiatrem”, więc przy obrocie wektor prędkości skręca razem z kursem
+	lv.z -= lv.z * (0.07 + 0.0016 * absf(lv.z)) * dt
+	lv.x -= lv.x * (0.5 + 0.03 * spd) * dt
+	hv = head * lv
 	if on_ground:
 		hv = hv.lerp(Vector3.ZERO, 1.0 - exp(-5.0 * dt))
 	var vy := velocity.y
-	var a_y := (up * CLIMB - vy) * 1.6 * lift - GRAVITY * (1.0 - lift)
+	# kolektyw: zadana prędkość pionowa; w szybkim locie nośność rośnie (przepływ przez wirnik)
+	var trans := 1.0 + clampf((spd - 12.0) / 40.0, 0.0, 0.25)
+	var a_y := (up * CLIMB * trans - vy) * 1.6 * lift - GRAVITY * (1.0 - lift)
 	if on_ground and up <= 0.0:
 		a_y = minf(a_y, 0.0)
 	vy += a_y * dt
