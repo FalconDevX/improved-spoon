@@ -193,6 +193,9 @@ static func forest_density(x: float, z: float) -> float:
 		return 0.0
 	if RUNWAY.grow(45.0).has_point(Vector2(x, z)):
 		return 0.0
+	for hc: Vector2 in HANGARS:
+		if Rect2(hc.x - 25.0, hc.y - 30.0, 50.0, 60.0).has_point(Vector2(x, z)):
+			return 0.0   # hangary i plac przed nimi
 	var h := height(x, z)
 	if h > 330.0:
 		return 0.0

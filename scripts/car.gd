@@ -8,7 +8,9 @@ const Player = preload("res://scripts/player.gd")
 const FX = preload("res://scripts/fx.gd")
 
 const MAX_HP := 260.0
-const ENGINE := 5200.0
+const ENGINE := 2600.0          # ciężkie auto (2,4 t): ~0–50 km/h w 6–7 s
+const V_MAX := 26.0             # prędkość maksymalna ~95 km/h
+const V_REV := 5.5              # wsteczny do ~20 km/h
 const BRAKE := 90.0
 const STEER := 0.55
 const RESPAWN := 30.0
@@ -380,7 +382,8 @@ func _physics_process(dt: float) -> void:
 	var fwd_speed := -(global_basis.inverse() * linear_velocity).z
 	var eng := 0.5 if hp < MAX_HP * 0.3 else 1.0
 	if gas > 0.0:
-		engine_force = -ENGINE * gas * eng if fwd_speed > -1.0 else 0.0
+		# siła maleje z prędkością (biegi, opór) — do zera przy V_MAX
+		engine_force = -ENGINE * gas * eng * clampf(1.0 - pow(maxf(fwd_speed, 0.0) / V_MAX, 2.0), 0.0, 1.0) if fwd_speed > -1.0 else 0.0
 		brake = 0.0 if fwd_speed > -1.0 else BRAKE
 	elif gas < 0.0:
 		# hamowanie, po zatrzymaniu wsteczny
@@ -388,7 +391,7 @@ func _physics_process(dt: float) -> void:
 			engine_force = 0.0
 			brake = BRAKE
 		else:
-			engine_force = ENGINE * 0.6 * -gas * eng
+			engine_force = ENGINE * 0.7 * -gas * eng * clampf(1.0 + fwd_speed / V_REV, 0.0, 1.0)
 			brake = 0.0
 	else:
 		engine_force = 0.0
