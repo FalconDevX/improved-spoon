@@ -11,6 +11,7 @@ const Ballistics = preload("res://scripts/ballistics.gd")
 const Hud = preload("res://scripts/hud.gd")
 const Level = preload("res://scripts/level.gd")
 const Aircraft = preload("res://scripts/plane.gd")
+const Heli = preload("res://scripts/heli.gd")
 const AmmoCrate = preload("res://scripts/ammo_crate.gd")
 const Clouds = preload("res://scripts/clouds.gd")
 const Grass = preload("res://scripts/grass.gd")
@@ -139,6 +140,7 @@ var _bot_n := 0
 var _bot_queue: Array = []       # czasy odrodzenia zabitych botów
 var _bot_corpses: Array = []
 var _bot_net_t := 0.0
+var _got_bots := false
 var _clock := 0.0
 
 
@@ -254,10 +256,22 @@ func _send_bots(bots: Array, to := -1) -> void:
 		if is_instance_valid(b) and not b.down:
 			list.append(_bot_info(b))
 	var gd := get_node("/root/GDSync")
-	if to >= 0:
-		gd.call_func_on(to, net_bots_spawn, list)
-	else:
-		gd.call_func(net_bots_spawn, list)
+	# paczkami (duża lista w jednym wywołaniu potrafi nie dojść)
+	for i in range(0, list.size(), BOT_PACK):
+		var part := list.slice(i, i + BOT_PACK)
+		if to >= 0:
+			gd.call_func_on(to, net_bots_spawn, part)
+		else:
+			gd.call_func(net_bots_spawn, part)
+
+
+## (gość) prosi hosta o listę botów, aż jakąś dostanie (host mógł je wysłać, zanim tu doszliśmy).
+func _ask_bots() -> void:
+	for i in 10:
+		await get_tree().create_timer(1.5 if i == 0 else 3.0).timeout
+		if _got_bots or not Player.net_on:
+			return
+		get_node("/root/GDSync").call_func(net_want_bots)
 
 
 ## (host) gość prosi o listę botów.
@@ -268,6 +282,7 @@ func net_want_bots() -> void:
 
 ## (gość) host stworzył boty.
 func net_bots_spawn(list: Array) -> void:
+	_got_bots = true
 	for it: Array in list:
 		if has_node(String(it[0])):
 			continue
@@ -438,6 +453,11 @@ func _spawn_planes() -> void:
 		pl.paint = PLANE_PAINT[i % PLANE_PAINT.size()]
 		pl.transform = _level.plane_spots[i]
 		add_child(pl)
+	for i in _level.heli_spots.size():
+		var h := Heli.new()
+		h.name = "Heli%d" % (i + 1)
+		h.transform = _level.heli_spots[i]
+		add_child(h)
 
 
 func _make_hud(player: Node) -> void:
@@ -824,7 +844,7 @@ func _on_lobby_joined(_n: String) -> void:
 	_when_nav(_spawn_squads)
 	if not _pvp_host:
 		# host mógł wysłać boty, zanim tu doszliśmy — prosimy o listę jeszcze raz
-		get_tree().create_timer(1.5).timeout.connect(func(): gd.call_func(net_want_bots))
+		_ask_bots()
 
 
 ## Miejsce odrodzenia: posterunek we wsi daleko od przeciwnika (albo podany).

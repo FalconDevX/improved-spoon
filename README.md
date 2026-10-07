@@ -1,6 +1,8 @@
 # Black Meridian — Operation 2027
 
-Strzelanka FPP w Godocie: solo przeciw botom albo PvP 1 na 1 (GD-Sync), samoloty, balistyka, rany.
+Strzelanka FPP w Godocie: solo przeciw botom albo PvP 1 na 1 z botami (GD-Sync), samoloty, śmigłowce, wyrzutnia
+przeciwlotnicza Piorun z namierzaniem, flary, balistyka, rany. Opcje gry (liczba botów, poziom
+trudności, odradzanie botów, restart mapy) — w menu i w pauzie (Esc; w PvP ustawia je host).
 
 ## Wymagania
 

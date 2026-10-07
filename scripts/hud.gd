@@ -40,7 +40,10 @@ func _draw() -> void:
 		draw_string(font, Vector2(vs.x * 0.5 - 70, 70), "RENTGEN  [Tab]", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.5, 0.85, 1.0, 0.95))
 	var pl = player.vehicle
 	if pl != null and is_instance_valid(pl):
-		_draw_plane(font, vs, pl)
+		if pl.get("is_heli") == true:
+			_draw_heli(font, vs, pl)
+		else:
+			_draw_plane(font, vs, pl)
 	else:
 		if show_help:
 			_draw_help(font)
@@ -318,7 +321,7 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 		return
 	for pl in get_tree().get_nodes_in_group("plane"):
 		if pl.can_board(player):
-			_center_text(font, "[F] — wsiądź do samolotu", Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
+			_center_text(font, "[F] — wsiądź do %s" % String(pl.get("board_name") if pl.get("board_name") != null else "samolotu"),Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
 			return
 	for c in get_tree().get_nodes_in_group("ammo_crate"):
 		if c.near(player):
@@ -403,6 +406,79 @@ func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 		_center_text(font, warns[i], Vector2(c.x, c.y - 120 - i * 28), 22, Color(1, 0.35, 0.25, blink))
 	if pl.on_ground and pl.throttle < 0.05 and pl.velocity.length() < 1.0:
 		_center_text(font, "W — gaz do startu, spójrz lekko w górę przy ~110 km/h", Vector2(c.x, c.y + 150), 16, Color(0.85, 1.0, 0.8, 0.85))
+	_draw_countermeasures(font, vs, pl, Vector2(x, y - 52))
+
+
+## Śmigłowiec: celownik wieżyczki i rakiet, przyrządy, uzbrojenie, flary, ostrzeżenia.
+func _draw_heli(font: Font, vs: Vector2, pl) -> void:
+	var help := [
+		"Spacja / Ctrl - w górę / w dół   W/S - lot do przodu / do tyłu   A/D - w bok   mysz - kierunek i celowanie",
+		"LPM - działko 12,7 mm (wieżyczka)   PPM - rakiety   C - flary   V - kabina / z tyłu   F - wysiądź (na ziemi)",
+	]
+	if show_help:
+		draw_rect(Rect2(10, 244, 820, help.size() * 20 + 14), Color(0, 0, 0, 0.45))
+		for i in help.size():
+			draw_string(font, Vector2(20, 262 + i * 20), help[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.92, 1.0, 0.85))
+	var cam := get_viewport().get_camera_3d()
+	var c := vs * 0.5
+	var green := Color(0.55, 1.0, 0.55, 0.9)
+	if cam and not cam.is_position_behind(pl.aim_point()):
+		var g: Vector2 = cam.unproject_position(pl.aim_point())
+		draw_arc(g, 14.0, 0.0, TAU, 32, green, 1.5, true)
+		draw_circle(g, 2.0, green)
+		for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
+			draw_line(g + d * 18.0, g + d * 28.0, green, 1.5, true)
+		if player.hit_marker > 0.0:
+			var hc := Color(1, 0.25, 0.2, player.hit_marker) if player.hit_kill else Color(1, 1, 1, player.hit_marker)
+			for d: Vector2 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+				draw_line(g + d * 8.0, g + d * 16.0, hc, 2.0, true)
+		var dist: float = pl.aim_point().distance_to(pl.global_position)
+		draw_string(font, g + Vector2(20, 26), "%d m" % int(dist), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(green, 0.7))
+	# oś kadłuba (tam celują rakiety, wieżyczka obraca się szerzej)
+	if cam:
+		var nose_p: Vector3 = pl.global_position - pl.global_basis.z * 200.0
+		if not cam.is_position_behind(nose_p):
+			var np := cam.unproject_position(nose_p)
+			draw_line(np + Vector2(-12, 0), np + Vector2(-4, 0), Color(1, 1, 1, 0.6), 1.5)
+			draw_line(np + Vector2(4, 0), np + Vector2(12, 0), Color(1, 1, 1, 0.6), 1.5)
+			draw_line(np + Vector2(0, 4), np + Vector2(0, 10), Color(1, 1, 1, 0.6), 1.5)
+	var x := vs.x - 300
+	var y := vs.y - 170
+	draw_rect(Rect2(x - 12, y - 30, 300, 190), Color(0, 0, 0, 0.35))
+	draw_string(font, Vector2(x, y), "PRĘDKOŚĆ  %d km/h" % int(pl.velocity.length() * 3.6), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.92, 0.7))
+	draw_string(font, Vector2(x, y + 24), "WYSOKOŚĆ  %d m" % int(maxf(pl.global_position.y - pl.GEAR_H, 0.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.92, 0.7))
+	draw_string(font, Vector2(x, y + 46), "wznoszenie %+.1f m/s" % pl.velocity.y, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
+	_bar(Vector2(x, y + 60), 160, pl.rpm, Color(0.9, 0.75, 0.3), "wirnik %d%%" % int(pl.rpm * 100.0), font)
+	var hpk: float = pl.hp / pl.MAX_HP
+	_bar(Vector2(x, y + 80), 160, hpk, Color(0.45, 0.85, 0.45) if hpk > 0.5 else (Color(1, 0.7, 0.2) if hpk > 0.25 else Color(1, 0.3, 0.2)), "kadłub %d%%" % int(maxf(hpk, 0.0) * 100.0), font)
+	var am: int = pl.ammo
+	draw_string(font, Vector2(x, y + 124), "%d" % am, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color(1, 1, 1) if am > 0 else Color(1, 0.35, 0.3))
+	draw_string(font, Vector2(x + 90, y + 124), "2 × KM 12,7 mm", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
+	var nr: int = pl.rockets
+	if nr <= 0 or (nr < pl.ROCKETS and pl.rocket_reload > 0.0):
+		_bar(Vector2(x, y + 138), 160, pl.rocket_reload / pl.ROCKET_RELOAD, Color(1, 0.75, 0.3), "rakiety: przeładowanie %d s" % ceili(pl.ROCKET_RELOAD - pl.rocket_reload), font)
+	else:
+		draw_string(font, Vector2(x, y + 146), "RAKIETY  %d / %d  [PPM]" % [nr, pl.ROCKETS], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.85, 0.5))
+	if not show_help:
+		draw_string(font, Vector2(x, y + 168), "F1 — sterowanie śmigłowcem", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
+	if cam:
+		_draw_air_targets(font, cam, pl)
+	if pl.on_ground and pl.global_position.distance_to(pl.home.origin) < 30.0 and (am < pl.AMMO or pl.hp < pl.MAX_HP):
+		_center_text(font, "Dozbrajanie i naprawa...", Vector2(c.x, c.y + 180), 16, Color(0.8, 1, 0.8))
+	var warns := PackedStringArray()
+	if pl.hp <= 0.0:
+		warns.append("ŚMIGŁOWIEC TRAFIONY — AUTOROTACJA")
+	elif pl.hp < pl.MAX_HP * 0.25:
+		warns.append("SILNIK USZKODZONY")
+	if pl.warn != "":
+		warns.append(pl.warn)
+	if am <= 0:
+		warns.append("BRAK AMUNICJI — WYLĄDUJ NA LĄDOWISKU")
+	var blink := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)
+	for i in warns.size():
+		_center_text(font, warns[i], Vector2(c.x, c.y - 120 - i * 28), 22, Color(1, 0.35, 0.25, blink))
+	if pl.on_ground and pl.rpm < 0.9:
+		_center_text(font, "Rozkręcanie wirnika... potem Spacja — start", Vector2(c.x, c.y + 150), 16, Color(0.85, 1.0, 0.8, 0.85))
 	_draw_countermeasures(font, vs, pl, Vector2(x, y - 52))
 
 

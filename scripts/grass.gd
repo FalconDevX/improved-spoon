@@ -71,6 +71,9 @@ func build(level) -> void:
 			# budynki w sektorze (podłoga i dach nie mają kolizji — promień trafiałby ziemię w środku)
 			var cell := Rect2(x0, z0, CELL, CELL)
 			var rooms: Array[Rect2] = []
+			for nz: Rect2 in level.no_grass:
+				if nz.intersects(cell):
+					rooms.append(nz)
 			for rf: Dictionary in level.roofs:
 				var a: AABB = rf["aabb"]
 				var rr := Rect2(a.position.x, a.position.z, a.size.x, a.size.z).grow(0.4)

@@ -22,6 +22,10 @@ var posts: Array = []             # miejsca, w których startują oddziały wrog
 var road_img: Image              # maska dróg 256 × 256 na całą mapę (trawa, minimapa)
 var ground_body: StaticBody3D
 var plane_spots: Array = []       # stanowiska samolotów (Transform3D, oś kadłuba nad ziemią)
+# lądowiska śmigłowców na placu na północny zachód od lotniska (śmigłowce przodem na wschód)
+var no_grass: Array = []          # prostokąty (XZ) bez trawy: lądowiska
+var heli_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(26, 1.2, -30)),
+	Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(26, 1.2, -48))]
 const GROUND_SIZE := 6000.0
 const AIRFIELD := Rect2(18, -14, 106, 50)   # lotnisko na wschodzie: pas wzdłuż drogi, bez przeszkód
 var _mats := {}
@@ -692,6 +696,34 @@ func _airfield() -> void:
 	for p in [Vector2(22, 4.5), Vector2(22.8, 5.3), Vector2(22, 17.5)]:
 		_cyl(Vector3(p.x, 0, p.y), 0.3, 0.9, "metal", "container_r", 0.0012)
 	_crate(Vector3(23, 0, 30), 1.1, 0.2)
+	# lądowiska: betonowy krąg z białym „H”
+	var pad := StandardMaterial3D.new()
+	pad.albedo_color = Color(0.36, 0.36, 0.34)
+	pad.roughness = 0.9
+	var white := StandardMaterial3D.new()
+	white.albedo_color = Color(0.85, 0.85, 0.8)
+	white.roughness = 0.8
+	for t: Transform3D in heli_spots:
+		var o := Vector3(t.origin.x, 0.0, t.origin.z)
+		no_grass.append(Rect2(o.x - 6.5, o.z - 6.5, 13.0, 13.0))
+		var disc := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 7.0
+		cm.bottom_radius = 7.0
+		cm.height = 0.04
+		cm.radial_segments = 40
+		disc.mesh = cm
+		disc.material_override = pad
+		disc.position = o + Vector3(0, 0.02, 0)
+		add_child(disc)
+		for b: Array in [[Vector3(0.6, 0.02, 4.0), Vector3(-1.4, 0, 0)], [Vector3(0.6, 0.02, 4.0), Vector3(1.4, 0, 0)], [Vector3(2.8, 0.02, 0.6), Vector3.ZERO]]:
+			var mi := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = b[0]
+			mi.mesh = bm
+			mi.material_override = white
+			mi.position = o + (b[1] as Vector3) + Vector3(0, 0.045, 0)
+			add_child(mi)
 
 
 ## Najlepsza osłona dla bota: blisko niego, zasłania przed zagrożeniem, nie zajęta przez innych.

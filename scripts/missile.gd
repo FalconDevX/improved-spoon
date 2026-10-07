@@ -12,7 +12,7 @@ const M_LIFE := 10.0
 const IGNITE := 0.25
 const TURN := 2.4            # maks. prędkość skrętu [rad/s]
 const FUZE := 7.0            # zapalnik zbliżeniowy [m]
-const DAMAGE := 230.0        # przy samym celu (samolot ma 160 HP, śmigłowiec 200)
+const DAMAGE := 230.0        # przy samym celu (samolot ma 160 HP, śmigłowiec 170) — w zasięgu zapalnika zwykle zestrzela
 
 var target: Node3D = null    # samolot / śmigłowiec albo flara, która go odciągnęła
 var decoyed := false
@@ -108,7 +108,7 @@ func _detonate(pos: Vector3) -> void:
 			var d: float = a.global_position.distance_to(pos)
 			if d < FUZE + 3.0:
 				var was: float = a.hp
-				a._damage(DAMAGE * clampf(1.0 - d / (FUZE + 3.0) * 0.6, 0.3, 1.0))
+				a._damage(DAMAGE * clampf(1.0 - d / (FUZE + 3.0) * 0.35, 0.5, 1.0))
 				if sh != null and sh.has_method("confirm_hit") and sh != a.pilot:
 					sh.confirm_hit(a, was > 0.0 and a.hp <= 0.0)
 	_explode(pos)
