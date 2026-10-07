@@ -89,7 +89,7 @@ func _ready() -> void:
 	_cam = Camera3D.new()
 	_cam.top_level = true
 	_cam.near = 0.05
-	_cam.far = 2500.0
+	_cam.far = 3500.0
 	_cam.fov = 70.0
 	add_child(_cam)
 	if Player.net_on:

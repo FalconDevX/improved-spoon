@@ -21,6 +21,8 @@ var med_spots := [Vector3(22, 0, -6), Vector3(4, 0, 6), Vector3(-24, 0, 14), Vec
 var posts: Array = []             # miejsca, w których startują oddziały wroga
 var road_img: Image              # maska dróg 256 × 256 na całą mapę (trawa, minimapa)
 var ground_body: StaticBody3D
+var terrain: Node3D
+const Terrain = preload("res://scripts/terrain.gd")
 var plane_spots: Array = []       # stanowiska samolotów (Transform3D, oś kadłuba nad ziemią)
 # lądowiska śmigłowców na placu na północny zachód od lotniska (śmigłowce przodem na wschód)
 # obrona przeciwlotnicza: [rodzaj, pozycja, obrót] — działka ZU-23-2 i wyrzutnie rakiet
@@ -147,11 +149,13 @@ shader_type spatial;
 // Teren: trawa i ziemia mieszane szumem, drogi gruntowe (maska z tekstury dróg), drobny detal.
 uniform sampler2D road_mask : filter_linear;
 uniform float half_size = 120.0;
+uniform vec4 runway = vec4(18.0, -14.0, 878.0, 36.0);   // beton lotniska i pasa: x0, z0, x1, z1
 varying vec3 wp;
+varying vec3 wn;
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n2(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
-void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz); }
 float ground_h(vec2 p) {
 	return n2(p * 7.0) * 0.4 + n2(p * 23.0) * 0.35 + n2(p * 61.0) * 0.25;
 }
@@ -179,7 +183,30 @@ void fragment() {
 	gravel = mix(gravel, vec3(0.5, 0.48, 0.44), pebbles * 0.4);
 	float rd = smoothstep(0.3, 0.7, road + (fine - 0.5) * 0.3);
 	c = mix(c, gravel, rd);
-	// koleiny na drogach
+	// wyżej sucha trawa i ziemia, na stromych zboczach skała, na szczytach śnieg
+	c = mix(c, vec3(0.2, 0.22, 0.13) * (0.8 + 0.4 * fine), smoothstep(40.0, 200.0, wp.y) * 0.7);   // hale, kosodrzewina
+	float rock = smoothstep(0.22, 0.42, 1.0 - wn.y + (fine - 0.5) * 0.15);
+	vec3 rockc = mix(vec3(0.22, 0.21, 0.2), vec3(0.34, 0.32, 0.3), n2(p * 0.2) * 0.6 + fine * 0.4);
+	c = mix(c, rockc, rock * smoothstep(15.0, 60.0, wp.y));
+	float snow = smoothstep(340.0, 400.0, wp.y + (big - 0.5) * 60.0) * smoothstep(0.5, 0.3, 1.0 - wn.y);
+	c = mix(c, vec3(0.9, 0.92, 0.95), snow);
+	// beton płyty lotniska i pasa startowego: płyty, oznakowanie
+	if (p.x > runway.x && p.x < runway.z && p.y > runway.y && p.y < runway.w) {
+		vec3 conc = vec3(0.3, 0.3, 0.29) * (0.88 + 0.12 * fine + 0.1 * n2(p * 0.3));
+		conc = mix(conc, vec3(0.2, 0.2, 0.19), smoothstep(0.6, 0.9, n2(p * 0.15 + 5.0)) * 0.5);   // plamy oleju, łaty
+		vec2 slab = abs(fract(p / 7.5) - 0.5);
+		conc *= 1.0 - 0.15 * smoothstep(0.47, 0.5, max(slab.x, slab.y));
+		float zc = (runway.y + runway.w) * 0.5;
+		float lines = 0.0;
+		if (p.x > 130.0) {
+			lines = step(abs(p.y - zc), 0.45) * step(0.5, fract(p.x / 60.0));
+			lines = max(lines, step(abs(abs(p.y - zc) - (runway.w - runway.y) * 0.5 + 1.5), 0.4));
+		}
+		conc = mix(conc, vec3(0.75, 0.75, 0.72), lines);
+		float edge = smoothstep(0.0, 1.5, min(min(p.x - runway.x, runway.z - p.x), min(p.y - runway.y, runway.w - p.y)));
+		c = mix(c, conc, edge);
+		rd = max(rd, edge);
+	}
 	ALBEDO = c;
 	ROUGHNESS = 0.97;
 	SPECULAR = 0.25;
@@ -190,7 +217,7 @@ void fragment() {
 		float h0 = ground_h(p) + pebbles * rd * 0.3 + blades * (1.0 - rd) * 0.5;
 		float hx = ground_h(p + vec2(e, 0.0)) + smoothstep(0.62, 0.7, n2((p + vec2(e, 0.0)) * 38.0)) * rd * 0.3;
 		float hz = ground_h(p + vec2(0.0, e)) + smoothstep(0.62, 0.7, n2((p + vec2(0.0, e)) * 38.0)) * rd * 0.3;
-		vec3 nw = normalize(vec3(-(hx - h0) / e * 0.006 * k, 1.0, -(hz - h0) / e * 0.006 * k));
+		vec3 nw = normalize(wn + vec3(-(hx - h0) / e * 0.006 * k, 0.0, -(hz - h0) / e * 0.006 * k));
 		NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
 	}
 }
@@ -541,31 +568,26 @@ func _ground() -> void:
 				v = maxf(v, 1.0 - smoothstep(float(r[2]) * 0.5, float(r[2]) * 0.5 + 1.2, dist))
 			img.set_pixel(x, y, Color(v, v, v))
 	road_img = img
-	var tex := ImageTexture.create_from_image(img)
+	# świat: dolina z bazą i lotniskiem, pagórki, góry, las, hangary (terrain.gd)
+	terrain = Terrain.new()
+	terrain.name = "Terrain"
+	add_child(terrain)
+	terrain.build(self)
+	ground_body = terrain.body
+	no_grass.append(Terrain.RUNWAY)
+
+
+## Materiał ziemi (teren): trawa, drogi, beton lotniska, skały, śnieg.
+func ground_material() -> ShaderMaterial:
 	var sh := Shader.new()
 	sh.code = GROUND_SHADER
 	var m := ShaderMaterial.new()
 	m.shader = sh
-	m.set_shader_parameter("road_mask", tex)
+	m.set_shader_parameter("road_mask", ImageTexture.create_from_image(road_img))
 	m.set_shader_parameter("half_size", HALF)
-	var mi := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(GROUND_SIZE, GROUND_SIZE)   # daleko poza mapą — widać z samolotu
-	mi.mesh = pm
-	mi.material_override = m
-	add_child(mi)
-	var fb := StaticBody3D.new()
-	ground_body = fb
-	fb.collision_layer = 1
-	fb.collision_mask = 0
-	fb.set_meta("mat", "dirt")
-	var cs := CollisionShape3D.new()
-	var bs := BoxShape3D.new()
-	bs.size = Vector3(GROUND_SIZE, 1.0, GROUND_SIZE)
-	cs.shape = bs
-	cs.position.y = -0.5
-	fb.add_child(cs)
-	add_child(fb)
+	var r: Rect2 = Terrain.RUNWAY
+	m.set_shader_parameter("runway", Vector4(r.position.x, r.position.y, r.end.x, r.end.y))
+	return m
 
 
 func _village(o: Vector2) -> void:

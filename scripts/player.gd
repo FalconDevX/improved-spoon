@@ -112,7 +112,7 @@ func _ready() -> void:
 	_cam = Camera3D.new()
 	_cam.fov = 70.0
 	_cam.near = 0.03
-	_cam.far = 900.0
+	_cam.far = 3500.0
 	_cam.current = true
 	_arm.add_child(_cam)
 	_cam_yaw.global_position = global_position + Vector3(0, 1.6, 0)

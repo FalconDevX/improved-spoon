@@ -678,7 +678,7 @@ func _build_environment() -> void:
 	env.glow_hdr_threshold = 1.1
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.6, 0.65, 0.7)
-	env.fog_density = 0.0014
+	env.fog_density = 0.0004
 	env.fog_aerial_perspective = 0.5
 	env.fog_sky_affect = 0.2
 	var we := WorldEnvironment.new()
@@ -726,7 +726,7 @@ func _show_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_menu_cam = Camera3D.new()
 	_menu_cam.fov = 60.0
-	_menu_cam.far = 2000.0
+	_menu_cam.far = 3500.0
 	add_child(_menu_cam)
 	_menu_cam.current = true
 	_spawn_planes()      # myśliwce na lotnisku widać w tle menu

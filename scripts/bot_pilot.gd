@@ -24,6 +24,8 @@ var dbg := ""
 const SAFE_ALT := 70.0       # samolot nie schodzi niżej poza nalotem
 const MIN_ALT := 30.0
 const HELI_ALT := 45.0
+const CENTER := Vector2(250, 0)      # środek doliny (terrain.gd)
+const RANGE := Vector2(800, 240)     # samolot zawraca przed zboczami gór
 
 
 func _init(c) -> void:
@@ -104,15 +106,16 @@ func _plane(dt: float) -> void:
 		_set_aim(flat + Vector3.UP * (0.3 if v > 31.0 else 0.0))
 		return
 	# granica obszaru: zawróć do środka
-	if Vector2(p.x, p.z).length() > 340.0:
-		_set_aim(Vector3(-p.x, 0, -p.z).normalized() + Vector3.UP * (0.3 if alt < SAFE_ALT else 0.0))
+	var rel := Vector2(p.x - CENTER.x, p.z - CENTER.y)
+	if (rel / RANGE).length() > 1.0:
+		_set_aim(Vector3(-rel.x, 0, -rel.y).normalized() + Vector3.UP * (0.3 if alt < SAFE_ALT else 0.0))
 		return
 	if alt < 160.0 and craft.velocity.y < -25.0:
 		_set_aim(Vector3(nose.x, 0.8, nose.z))
 		return
 	if target == null:
 		# patrol: krąg nad mapą na bezpiecznej wysokości
-		var tang := Vector3(-p.z, 0, p.x).normalized() * _orbit
+		var tang := Vector3(-rel.y, 0, rel.x).normalized() * _orbit
 		_set_aim(tang + Vector3.UP * clampf((180.0 - alt) / 150.0, -0.3, 0.4))
 		return
 	var tp := _target_pos()
@@ -121,7 +124,7 @@ func _plane(dt: float) -> void:
 	_extend -= dt
 	if _extend > 0.0 or (_extend > -60.0 and _extending):
 		# odejście: dalej od celu i w górę, aż będzie miejsce na nowe podejście
-		_extending = (dist < 600.0 and Vector2(p.x, p.z).length() < 300.0) or _extend > 0.0
+		_extending = (dist < 900.0 and (rel / RANGE).length() < 0.85) or _extend > 0.0
 		var away := Vector3(-to.x, 0, -to.z).normalized()
 		_set_aim(away + Vector3.UP * (0.3 if alt < 120.0 else (-0.15 if alt > 180.0 else 0.0)))
 		return

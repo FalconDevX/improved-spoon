@@ -41,7 +41,7 @@ const SPOOL := 4.0                         # rozkręcanie wirnika [s]
 const CRASH_VY := 8.0
 const CRASH_H := 16.0
 const RESPAWN := 25.0
-const BOUND := 450.0
+const BOUND := 1400.0
 const MOUSE_SENS := 0.0022
 const NET_RATE := 1.0 / 30.0
 const GUNS := [Vector3(-0.09, -1.05, -3.05), Vector3(0.09, -1.05, -3.05)]
@@ -146,7 +146,7 @@ func _ready() -> void:
 	_cam.top_level = true
 	_cam.fov = 75.0
 	_cam.near = 0.05
-	_cam.far = 1500.0
+	_cam.far = 3500.0
 	add_child(_cam)
 	_smoke = _emitter(Color(0.2, 0.19, 0.18, 0.7), Color(0.35, 0.35, 0.35, 0.0), 2.5, 1.6, false)
 	_fire = _emitter(Color(1.0, 0.75, 0.3, 1.0), Color(0.9, 0.2, 0.0, 0.0), 0.5, 0.9, true)
