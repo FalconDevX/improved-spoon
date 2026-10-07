@@ -313,7 +313,7 @@ func _movement(dt: float) -> void:
 		speed = minf(speed, ADS_SPEED)
 	if vitals.legs >= 1:
 		speed = minf(speed, 0.9)
-	speed *= clampf(vitals.capacity() + 0.2, 0.35, 1.0)
+	speed *= vitals.mobility()
 	_move = _move.lerp(wish * speed, 1.0 - exp(-ACCEL * dt))
 	velocity.x = _move.x
 	velocity.z = _move.z
@@ -330,7 +330,7 @@ func _movement(dt: float) -> void:
 	if sprinting and _move.length() > 3.0:
 		stamina = maxf(stamina - 14.0 * dt, 0.0)
 	else:
-		stamina = minf(stamina + (9.0 if _move.length() < 2.0 else 4.0) * dt * clampf(1.0 - vitals.lost() * 1.5, 0.2, 1.0), 100.0)
+		stamina = minf(stamina + (9.0 if _move.length() < 2.0 else 4.0) * dt * vitals.mobility(), 100.0)
 	if holding_breath:
 		breath = maxf(breath - dt, 0.0)
 	else:

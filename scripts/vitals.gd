@@ -132,6 +132,16 @@ func capacity() -> float:
 	return clampf(c, 0.1, 1.0)
 
 
+## Sprawność ruchu: utrata krwi spowalnia dopiero gdy jest jej bardzo mało (tuż przed omdleniem),
+## ból trochę, duszność mocno. Nogi osobno (legs).
+func mobility() -> float:
+	if not conscious:
+		return 0.0
+	var c := 1.0 - smoothstep(0.3, UNCONSCIOUS, lost()) * 0.6
+	c -= pain * 0.1 + breath * 0.3
+	return clampf(c, 0.3, 1.0)
+
+
 ## Rana od pocisku. organs: lista narządów na drodze (z humanoid.organs_hit), cavity: mnożnik jamy rany.
 ## Zwraca słownik skutków: {names, kill, ko, legs_now, arm}.
 func wound(seg: String, organs: Array, cavity: float) -> Dictionary:
