@@ -6,6 +6,7 @@ extends VehicleBody3D
 
 const Player = preload("res://scripts/player.gd")
 const FX = preload("res://scripts/fx.gd")
+const MODEL = preload("res://assets/vehicles/hummer.glb")
 
 const MAX_HP := 260.0
 const ENGINE := 2600.0          # ciężkie auto (2,4 t): ~0–50 km/h w 6–7 s
@@ -15,13 +16,12 @@ const BRAKE := 90.0
 const STEER := 0.55
 const RESPAWN := 30.0
 const SEAT := Vector3(-0.45, 0.55, 0.15)    # stopy kierowcy (lewy fotel)
-const EYE := Vector3(-0.45, 1.75, 0.05)
+const EYE := Vector3(-0.47, 1.5, 0.1)
 const NET_RATE := 1.0 / 20.0
 
 var board_name := "samochodu"
 var is_car := true
 var home: Transform3D
-var paint := Color(0.33, 0.36, 0.25)
 var pilot = null
 var auth := 0
 var hp := MAX_HP
@@ -31,6 +31,7 @@ var cockpit_view := false
 
 var _wheels: Array = []
 var _parts: Array = []
+var _wheel_mesh: Array = []
 var _burnt: StandardMaterial3D
 var _cam: Camera3D
 var _cam_yaw := 0.0
@@ -55,26 +56,26 @@ func _ready() -> void:
 	center_of_mass = Vector3(0, 0.25, 0)
 	set_meta("mat", "metal")
 	set_meta("hollow", 0.004)
-	set_meta("size", Vector3(2.2, 1.8, 4.6))
+	set_meta("size", Vector3(2.2, 2.4, 4.9))
 	_build_model()
 	for mi: MeshInstance3D in _parts:
 		mi.set_meta("mat0", mi.material_override)
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = Vector3(2.15, 1.0, 4.6)
+	bs.size = Vector3(2.15, 1.0, 4.8)
 	cs.shape = bs
 	cs.position = Vector3(0, 1.0, 0)
 	add_child(cs)
 	var cs2 := CollisionShape3D.new()
 	var bs2 := BoxShape3D.new()
-	bs2.size = Vector3(2.0, 0.8, 2.3)
+	bs2.size = Vector3(2.1, 0.9, 2.7)
 	cs2.shape = bs2
-	cs2.position = Vector3(0, 1.85, 0.45)
+	cs2.position = Vector3(0, 1.9, 0.3)
 	add_child(cs2)
-	for p: Vector3 in [Vector3(-0.92, 0.5, -1.55), Vector3(0.92, 0.5, -1.55), Vector3(-0.92, 0.5, 1.6), Vector3(0.92, 0.5, 1.6)]:
+	for p: Vector3 in [Vector3(-0.9, 0.69, -1.67), Vector3(0.9, 0.69, -1.67), Vector3(-0.9, 0.69, 1.6), Vector3(0.9, 0.69, 1.6)]:
 		var w := VehicleWheel3D.new()
 		w.position = p
-		w.wheel_radius = 0.45
+		w.wheel_radius = 0.475
 		w.wheel_rest_length = 0.22
 		w.suspension_travel = 0.25
 		w.suspension_stiffness = 45.0
@@ -87,25 +88,9 @@ func _ready() -> void:
 		w.use_as_steering = p.z < 0.0
 		add_child(w)
 		var tire := MeshInstance3D.new()
-		var tm := CylinderMesh.new()
-		tm.top_radius = 0.45
-		tm.bottom_radius = 0.45
-		tm.height = 0.38
-		tm.radial_segments = 16
-		tire.mesh = tm
-		tire.rotation.z = PI * 0.5
-		tire.material_override = _mat(Color(0.07, 0.07, 0.07), 0.0, 0.9)
+		tire.mesh = _wheel_mesh[0 if p.x < 0.0 else 1]
 		w.add_child(tire)
-		var hub := MeshInstance3D.new()
-		var hm := CylinderMesh.new()
-		hm.top_radius = 0.24
-		hm.bottom_radius = 0.24
-		hm.height = 0.4
-		hm.radial_segments = 10
-		hub.mesh = hm
-		hub.rotation.z = PI * 0.5
-		hub.material_override = _mat(paint.darkened(0.3))
-		w.add_child(hub)
+		_parts.append(tire)
 		_wheels.append(w)
 	_snd = AudioStreamPlayer3D.new()
 	_snd.stream = FX._cache["engine"]
@@ -157,72 +142,17 @@ func _mat(c: Color, metal := 0.25, rough := 0.7) -> StandardMaterial3D:
 	return m
 
 
-func _box(size: Vector3, pos: Vector3, mat: Material, rot := Vector3.ZERO) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var b := BoxMesh.new()
-	b.size = size
-	mi.mesh = b
-	mi.position = pos
-	mi.rotation = rot
-	mi.material_override = mat
-	add_child(mi)
-	_parts.append(mi)
-	return mi
-
-
 func _build_model() -> void:
-	var body := _mat(paint)
-	var dark := _mat(paint.darkened(0.35))
-	var black := _mat(Color(0.06, 0.06, 0.06), 0.3, 0.6)
-	var glass := _mat(Color(0.08, 0.12, 0.14), 0.6, 0.1)
 	_burnt = _mat(Color(0.05, 0.045, 0.04), 0.1, 0.95)
-	# nadwozie: szeroka, niska skrzynia, maska z przodu (−Z), błotniki nad kołami
-	_box(Vector3(2.2, 0.75, 4.7), Vector3(0, 1.0, 0), body)
-	_box(Vector3(2.1, 0.22, 1.7), Vector3(0, 1.43, -1.45), body, Vector3(-0.08, 0, 0))        # maska
-	_box(Vector3(1.0, 0.35, 0.5), Vector3(0, 1.2, -2.42), dark)                              # osłona chłodnicy
-	for sx: float in [-1.0, 1.0]:
-		for sz: float in [-1.55, 1.6]:
-			_box(Vector3(0.42, 0.2, 1.2), Vector3(sx * 0.95, 1.32, sz), body)               # błotniki
-	# kabina: słupki, dach, szyby
-	_box(Vector3(2.05, 0.08, 2.4), Vector3(0, 2.25, 0.45), body)                             # dach
-	for sx: float in [-1.0, 1.0]:
-		for sz: float in [-0.72, 1.62]:
-			_box(Vector3(0.08, 0.85, 0.08), Vector3(sx * 0.98, 1.8, sz), dark)
-		_box(Vector3(0.04, 0.6, 2.2), Vector3(sx * 1.0, 1.82, 0.45), glass)                  # szyby boczne
-	_box(Vector3(1.9, 0.6, 0.04), Vector3(0, 1.85, -0.74), glass, Vector3(-0.15, 0, 0))     # szyba przednia
-	_box(Vector3(1.95, 0.75, 0.06), Vector3(0, 1.8, 1.66), body)                             # tył kabiny
-	# skrzynia z tyłu, zderzaki, koło zapasowe, wieżyczka na dachu
-	_box(Vector3(2.1, 0.2, 0.25), Vector3(0, 0.75, -2.42), black)
-	_box(Vector3(2.1, 0.2, 0.25), Vector3(0, 0.75, 2.42), black)
-	var spare := MeshInstance3D.new()
-	var sm := CylinderMesh.new()
-	sm.top_radius = 0.42
-	sm.bottom_radius = 0.42
-	sm.height = 0.3
-	spare.mesh = sm
-	spare.rotation.x = PI * 0.5
-	spare.position = Vector3(0.55, 1.15, 2.5)
-	spare.material_override = black
-	add_child(spare)
-	_parts.append(spare)
-	var ring := MeshInstance3D.new()
-	var rm := CylinderMesh.new()
-	rm.top_radius = 0.55
-	rm.bottom_radius = 0.6
-	rm.height = 0.3
-	ring.mesh = rm
-	ring.position = Vector3(0, 2.44, 0.6)
-	ring.material_override = dark
-	add_child(ring)
-	_parts.append(ring)
-	_box(Vector3(0.08, 0.08, 1.1), Vector3(0, 2.62, 0.15), black)                            # lufa KM na dachu
-	_box(Vector3(0.6, 0.35, 0.05), Vector3(0, 2.62, 0.35), dark)                             # osłona strzelca
-	# światła
-	var lamp := _mat(Color(0.95, 0.9, 0.7), 0.0, 0.2)
-	lamp.emission_enabled = true
-	lamp.emission = Color(0.4, 0.38, 0.3)
-	for sx: float in [-0.75, 0.75]:
-		_box(Vector3(0.22, 0.14, 0.04), Vector3(sx, 1.25, -2.36), lamp)
+	# model Hummera (assets/vehicles/hummer.glb): nadwozie + osobne koło lewe i prawe
+	var m: Node3D = MODEL.instantiate()
+	var body: MeshInstance3D = m.get_node("Body")
+	m.remove_child(body)
+	body.owner = null
+	add_child(body)
+	_parts.append(body)
+	_wheel_mesh = [(m.get_node("WheelL") as MeshInstance3D).mesh, (m.get_node("WheelR") as MeshInstance3D).mesh]
+	m.free()
 
 
 func _emitter(c0: Color, c1: Color, life: float, size: float, add: bool) -> GPUParticles3D:
