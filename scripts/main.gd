@@ -602,10 +602,10 @@ func _spawn_planes() -> void:
 		h.name = "Heli%d" % (i + 1)
 		h.transform = _level.heli_spots[i]
 		add_child(h)
-	# latający dysk na wschodnim skraju pasa (poza osią startu samolotów)
+	# latający dysk za wschodnim ogrodzeniem bazy, obok C-130 (poza osią startu myśliwców)
 	var u := Ufo.new()
 	u.name = "UFO1"
-	u.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(780.0, 4.6, 52.0))
+	u.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(160.0, 4.6, 92.0))
 	add_child(u)
 
 

@@ -16,6 +16,7 @@ const VILLAGE_C := Vector2(40, 212)
 const VILLAGE_HALF := Vector2(176, 78)
 const VILLAGE := Rect2(VILLAGE_C - VILLAGE_HALF, VILLAGE_HALF * 2.0)
 const VILLAGE_ROAD := Rect2(-16, 110, 12, 30)       # droga z bramy bazy do wioski
+const PARKING := Rect2(135, 55, 115, 75)            # postój UFO (main.gd) i C-130 (level.gd)
 # droga przez tunel pod grzbietem na wschód od wioski (tunnel.gd; wykopy są w mapie wysokości)
 const TUNNEL_ROADS := [Rect2(206, 205, 40, 14), Rect2(334, 205, 102, 14), Rect2(420, 40, 16, 179)]
 
@@ -385,6 +386,8 @@ static func forest_density(x: float, z: float) -> float:
 		return 0.0
 	if VILLAGE.grow(30.0).has_point(Vector2(x, z)) or VILLAGE_ROAD.grow(20.0).has_point(Vector2(x, z)):
 		return 0.0
+	if PARKING.has_point(Vector2(x, z)):
+		return 0.0   # postój UFO i C-130 za wschodnim ogrodzeniem
 	for r: Rect2 in TUNNEL_ROADS:
 		if r.grow(8.0).has_point(Vector2(x, z)):
 			return 0.0
