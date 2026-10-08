@@ -63,6 +63,7 @@ func _draw() -> void:
 		_draw_lock(font, vs)
 		_draw_plane_hint(font, vs)
 	_draw_damage_dirs(vs)
+	_draw_v1_markers(font, vs)
 	_draw_waypoint(font, vs)
 	_draw_para(font, vs)
 	_draw_kills(font, vs)
@@ -574,6 +575,42 @@ func _draw_car(font: Font, vs: Vector2, car) -> void:
 	draw_string(font, Vector2(x, y + 52), "W/S gaz/hamulec  A/D skręt  Spacja ręczny  V widok  F wysiądź", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.55))
 	if car.hp < car.MAX_HP * 0.25:
 		_center_text(font, "POJAZD PŁONIE — WYSIADAJ", Vector2(vs.x * 0.5, vs.y * 0.5 - 120), 22, Color(1, 0.35, 0.25, 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)))
+
+
+## Znaczniki lecących V-1 (cudzych): romb z odległością, przy krawędzi ekranu strzałka, gdy poza
+## widokiem; ostrzeżenie, gdy pocisk jest blisko.
+func _draw_v1_markers(font: Font, vs: Vector2) -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var near := INF
+	for m in get_tree().get_nodes_in_group("v1_flying"):
+		if m == player.vehicle or m.phase == 4:
+			continue
+		var d: float = cam.global_position.distance_to(m.global_position)
+		near = minf(near, d)
+		var red := Color(1.0, 0.2, 0.15, 0.95)
+		var sp: Vector2
+		var on := not cam.is_position_behind(m.global_position)
+		if on:
+			sp = cam.unproject_position(m.global_position)
+			on = Rect2(Vector2(30, 30), vs - Vector2(60, 60)).has_point(sp)
+		if on:
+			var r := 9.0
+			draw_polyline(PackedVector2Array([sp + Vector2(0, -r), sp + Vector2(r, 0), sp + Vector2(0, r), sp + Vector2(-r, 0), sp + Vector2(0, -r)]), red, 2.0, true)
+			draw_string(font, sp + Vector2(12, 5), "V-1  %d m" % int(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, red)
+		else:
+			# kierunek do pocisku rzutowany na ekran: strzałka przy krawędzi
+			var lp: Vector3 = cam.global_basis.inverse() * (m.global_position - cam.global_position)
+			var dir := Vector2(lp.x, -lp.y).normalized() if Vector2(lp.x, lp.y).length() > 0.01 else Vector2.UP
+			var c := vs * 0.5
+			var k := minf((vs.x * 0.5 - 40.0) / maxf(absf(dir.x), 0.001), (vs.y * 0.5 - 40.0) / maxf(absf(dir.y), 0.001))
+			var at := c + dir * k
+			var side := Vector2(-dir.y, dir.x)
+			draw_colored_polygon(PackedVector2Array([at + dir * 14.0, at - dir * 6.0 + side * 9.0, at - dir * 6.0 - side * 9.0]), red)
+			draw_string(font, at - dir * 22.0 + Vector2(-24, 5), "V-1 %d m" % int(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, red)
+	if near < 1500.0:
+		_center_text(font, "UWAGA — NADLATUJE V-1!", Vector2(vs.x * 0.5, 120), 22, Color(1, 0.3, 0.2, 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.01)))
 
 
 ## V-1 sterowany z pulpitu: prędkość, wysokość, paliwo, odległość od wyrzutni.

@@ -130,6 +130,17 @@ func _draw_map() -> void:
 		var s := 7.0 / _zoom
 		var side := Vector2(-dir.y, dir.x)
 		v.draw_colored_polygon(PackedVector2Array([q + dir * s * 1.4, q - dir * s + side * s, q - dir * s * 0.4, q - dir * s - side * s]), col)
+	# lecące V-1: czerwone krzyżyki z kierunkiem lotu
+	for m in get_tree().get_nodes_in_group("v1_flying"):
+		if m == p.get("vehicle"):
+			continue
+		var f: Vector3 = -m.global_basis.z
+		var dir := Vector2(f.x, f.z).normalized() if Vector2(f.x, f.z).length() > 0.01 else Vector2.UP
+		var q := o + Vector2(m.global_position.x, m.global_position.z)
+		var s := 6.0 / _zoom
+		var side := Vector2(-dir.y, dir.x)
+		v.draw_line(q - dir * s, q + dir * s * 1.6, Color(1.0, 0.15, 0.1), 2.5 / _zoom)
+		v.draw_line(q - side * s, q + side * s, Color(1.0, 0.15, 0.1), 2.5 / _zoom)
 	# punkt nawigacyjny (przy krawędzi, gdy poza minimapą)
 	if main.waypoint != Vector3.INF:
 		var wq := o + Vector2(main.waypoint.x, main.waypoint.z)

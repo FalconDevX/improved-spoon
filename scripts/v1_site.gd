@@ -4,9 +4,13 @@ extends Node3D
 ## z pulpitem startowym. Przy pulpicie [F] odpala pocisk stojący na rampie (v1.gd); po starcie
 ## następny jest podwieszany po RELOAD sekundach.
 ## Układ lokalny: początek u stopy rampy na ziemi, start w −Z.
+## Sieć (GD-Sync): komputer, który odpalił, liczy lot i wysyła pozycję (net_fly); u innych graczy
+## ten sam pocisk startuje z rampy (net_launch), leci za pozycją i wybucha w tym samym miejscu
+## (net_boom) — wybuch zabija ich żołnierzy, słychać buczenie, HUD pokazuje znacznik nadlotu.
 
 const V1 = preload("res://scripts/v1.gd")
 const FX = preload("res://scripts/fx.gd")
+const Player = preload("res://scripts/player.gd")
 
 const LENGTH := 48.0
 const INCLINE := deg_to_rad(6.0)
@@ -28,6 +32,10 @@ func _ready() -> void:
 	add_to_group("launcher")
 	_build()
 	_new_missile()
+	if Player.net_on:
+		var gd := get_node("/root/GDSync")
+		for f in [net_launch, net_fly, net_boom]:
+			gd.expose_func(f)
 
 
 func _mat(c: Color, metal := 0.0, rough := 0.85) -> StandardMaterial3D:
@@ -163,6 +171,37 @@ func board(p) -> void:
 	FX.I.play("whoosh", foot, 8.0, 0.05, 0.5, 40.0)
 	_steam(foot, 1.0)
 	missile.launch(p)
+	if Player.net_on:
+		get_node("/root/GDSync").call_func(net_launch, int(p.get("net_id") if p.get("net_id") != null else 0))
+
+
+## (zdalnie) inny gracz odpalił pocisk z tej rampy.
+func net_launch(id: int) -> void:
+	if not ready_to_fire():
+		_reload = 0.0
+		if missile != null and is_instance_valid(missile):
+			missile.queue_free()
+		_new_missile()
+	_lamp.albedo_color = Color(1.0, 0.25, 0.2)
+	var foot := global_transform * rail_point(0.0)
+	FX.I.play("boom", foot, 6.0, 0.05, 1.7, 50.0)
+	FX.I.play("whoosh", foot, 8.0, 0.05, 0.5, 40.0)
+	_steam(foot, 1.0)
+	missile.remote = true
+	missile.shooter_remote = get_parent().get_node_or_null("P%d" % id)
+	missile.launch(null)
+
+
+## (zdalnie) pozycja lecącego pocisku od komputera, który go odpalił.
+func net_fly(pos: Vector3, rot: Quaternion, spd: float, ph: int) -> void:
+	if missile != null and is_instance_valid(missile) and missile.remote:
+		missile.net_state(pos, rot, spd, ph)
+
+
+## (zdalnie) pocisk uderzył — wybuch w tym samym miejscu.
+func net_boom(pos: Vector3) -> void:
+	if missile != null and is_instance_valid(missile) and missile.remote and missile.phase != 0:
+		missile._explode(pos)
 
 
 ## Pocisk zszedł z rampy: obłok pary na końcu szyn, odliczanie do podwieszenia następnego.

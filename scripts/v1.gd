@@ -22,6 +22,8 @@ const FUEL := 150.0                 # [s] lotu z pracującym silnikiem
 const MOUSE_SENS := 0.0022
 const BOUND := 2800.0
 
+const NET_RATE := 1.0 / 20.0
+
 var board_name := "V-1"
 var is_v1 := true
 var pilot = null
@@ -43,6 +45,11 @@ var _flame: MeshInstance3D
 var _light: OmniLight3D
 var _snd: AudioStreamPlayer3D
 var _cam: Camera3D
+var remote := false                 # lot liczy inny komputer (sieć) — tu tylko podąża za pozycją
+var shooter_remote = null           # gracz, który odpalił (u innych graczy: jego węzeł P<id>)
+var _net_t := 0.0
+var _net_pos := Vector3.ZERO
+var _net_rot := Quaternion.IDENTITY
 
 
 func _ready() -> void:
@@ -116,6 +123,7 @@ func launch(p) -> void:
 		p.enter_vehicle(self)
 		p._msg("V-1 START! Mysz — kierunek, W/S — prędkość, Spacja — nurkowanie, F — detonacja")
 	phase = 1
+	add_to_group("v1_flying")       # HUD i minimapa innych graczy pokazują znacznik
 	_rail_s = 0.0
 	speed = 0.0
 	var f := -global_basis.z
@@ -148,6 +156,19 @@ func pilot_input(e: InputEvent) -> void:
 
 
 ## Koniec paliwa albo rozkaz nurkowania: silnik gaśnie (cisza), pocisk nurkuje.
+## (zdalnie) stan lotu od komputera, który pocisk odpalił.
+func net_state(pos: Vector3, rot: Quaternion, spd: float, ph: int) -> void:
+	if phase == 1:
+		phase = 2
+	_net_pos = pos
+	_net_rot = rot
+	speed = spd
+	if global_position.distance_to(pos) > 60.0:
+		global_position = pos
+	if ph == 3 and phase == 2:
+		cut_engine()
+
+
 func cut_engine() -> void:
 	if phase != 2:
 		return
@@ -178,6 +199,16 @@ func _physics_process(dt: float) -> void:
 	if phase == 0 or phase == 4:
 		return
 	_t += dt
+	if remote and _t > FUEL + 150.0:
+		queue_free()     # odpalający gracz się rozłączył — pocisk znika
+		return
+	if remote and phase >= 2:
+		_net_pos += -global_basis.z * speed * dt
+		global_position = global_position.lerp(_net_pos, 1.0 - exp(-10.0 * dt))
+		global_basis = Basis(global_basis.get_rotation_quaternion().slerp(_net_rot, 1.0 - exp(-10.0 * dt)))
+		if phase == 2:
+			_engine_fx()
+		return
 	if pilot != null and (not is_instance_valid(pilot) or pilot.down):
 		pilot = null
 	var p0 := global_position
@@ -190,6 +221,8 @@ func _physics_process(dt: float) -> void:
 		if _rail_s >= length:
 			phase = 2
 			speed = RAIL_V
+			_net_pos = rail_to
+			_net_rot = global_basis.get_rotation_quaternion()
 			if site != null and is_instance_valid(site):
 				site.on_launched()
 		global_position = rail_from.lerp(rail_to, minf(_rail_s / length, 1.0))
@@ -233,6 +266,11 @@ func _physics_process(dt: float) -> void:
 		_explode(r["position"])
 		return
 	global_position = p1
+	if Player.net_on:
+		_net_t -= dt
+		if _net_t <= 0.0:
+			_net_t = NET_RATE
+			site.get_node("/root/GDSync").call_func_unreliable(site.net_fly, global_position, global_basis.get_rotation_quaternion(), speed, phase)
 	if absf(p1.x) > BOUND or absf(p1.z) > BOUND or p1.y < -50.0 or _t > FUEL + 120.0:
 		_explode(p1)
 
@@ -254,9 +292,13 @@ func _explode(pos: Vector3) -> void:
 	if phase == 4:
 		return
 	phase = 4
+	if Player.net_on and not remote and site != null and is_instance_valid(site):
+		site.get_node("/root/GDSync").call_func(site.net_boom, pos)
 	var b := Bomb.new()
 	b.kind = "v1"
 	b.shooter = pilot if (pilot != null and is_instance_valid(pilot)) else null
+	if remote and shooter_remote != null and is_instance_valid(shooter_remote):
+		b.shooter = shooter_remote
 	get_parent().add_child(b)
 	b.global_position = pos
 	b._explode(pos)
