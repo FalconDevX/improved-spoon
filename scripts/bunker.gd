@@ -1,6 +1,6 @@
 extends Node3D
-## Podziemne schrony połączone tunelami (14 m pod ziemią). Trzy wejścia — przy zachodniej bramie bazy,
-## przy wiosce i na południe od lotniska: betonowa pochylnia schodzi w głąb (otwór w Terrain3D nad nią),
+## Podziemne schrony połączone tunelami (14 m pod ziemią). Cztery wejścia — w bazie (południowa część
+## placu), przy zachodniej bramie bazy, przy wiosce i na południe od lotniska: betonowa pochylnia schodzi w głąb (otwór w Terrain3D nad nią),
 ## na dole główna sala schronu i korytarze łączące wszystkie wejścia. Schron chroni przed wybuchem
 ## atomowym (nuke.gd sprawdza `underground()`).
 ## Korytarze są na siatce komórek CELL × CELL: podłoga i strop w każdej komórce, ściana tam, gdzie
@@ -18,11 +18,13 @@ const AREAS := [
 	[-188, -140, -184, -56],    # korytarz na południe
 	[-188, -140, 300, -136],    # korytarz na wschód (pod bazą, do lotniska)
 	[296, -140, 300, -136],
+	[16, -136, 20, -116],       # odnoga na północ: zejście w bazie
 ]
 # pochylnie: [komórka dolna (x, z — róg), kierunek w górę (dx, dz)], drzwi na górnym końcu
 const RAMPS := [
 	[Vector2i(-188, 160), Vector2i(1, 0), "SCHRON — WIOSKA"],
-	[Vector2i(-176, -44), Vector2i(1, 0), "SCHRON — BAZA"],
+	[Vector2i(-176, -44), Vector2i(1, 0), "SCHRON — ZACHÓD"],
+	[Vector2i(16, -116), Vector2i(0, 1), "SCHRON — BAZA"],
 	[Vector2i(296, -140), Vector2i(0, 1), "SCHRON — LOTNISKO"],
 ]
 
@@ -217,9 +219,60 @@ func _ramp(bottom: Vector2i, d: Vector2i, label: String, t3d, level, conc: Mater
 					t3d.data.set_control_hole(p, true)
 				v += st * 0.5
 			u += st * 0.5
+	_apron(start, dir, side, L, w, gy, conc)
 	if level and level.get("no_grass") != null:
 		var r := Rect2(Vector2(minf(start.x, top.x), minf(start.z, top.z)), Vector2.ZERO).expand(Vector2(maxf(start.x, top.x), maxf(start.z, top.z)))
 		level.no_grass.append(r.grow(CELL))
+
+
+const APRON := 3.5      # pas betonu wokół wejścia [m]
+
+
+## Betonowa płyta wokół wejścia na wysokości terenu. Otwór w Terrain3D wycina całe kwadraty
+## siatki, więc jest szerszy od pochylni — płyta zakrywa szpary przy ścianach i przed drzwiami
+## (przez nie wpadało się w pustkę). Wolne zostaje tylko samo zejście, tam gdzie strop pochylni
+## wychodzi nad płytę.
+func _apron(start: Vector3, dir: Vector3, side: Vector3, L: float, w: float, gy: float, conc: Material) -> void:
+	var t := 0.4
+	var top_y := gy + 0.05
+	var slope := (top_y - FLOOR) / L
+	# odcinek pochylni, nad którym strop jest wyżej niż spód płyty (tam jest przejście)
+	var open_u := L - (H + t) / slope
+	var back := maxf(L - (H + 2.5) / slope - APRON, 0.0)    # dalej teren nie ma otworu
+	var body := StaticBody3D.new()
+	body.collision_layer = 1
+	body.collision_mask = 0
+	body.set_meta("mat", "concrete")
+	add_child(body)
+	var basis := Basis(side, Vector3.UP, -dir)
+	# [u0, u1, v0, v1] — prostokąty płyty w układzie pochylni (u wzdłuż, v w bok)
+	var parts := [
+		[back, L + APRON, -w - APRON, -w + 0.1], # pasy wzdłuż ścian bocznych (zachodzą na ścianę)
+		[back, L + APRON, w - 0.1, w + APRON],
+		[back, open_u, -w, w],                    # nad stropem głębszej części
+		[L, L + APRON, -w, w],                    # przed drzwiami
+	]
+	for r: Array in parts:
+		var u0: float = r[0]
+		var u1: float = r[1]
+		var v0: float = r[2]
+		var v1: float = r[3]
+		if u1 - u0 < 0.05:
+			continue
+		var c := start + dir * (u0 + u1) * 0.5 + side * (v0 + v1) * 0.5 + Vector3.UP * (top_y - t * 0.5)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(v1 - v0, t, u1 - u0)
+		mi.mesh = bm
+		mi.material_override = conc
+		mi.transform = Transform3D(basis, c)
+		add_child(mi)
+		var cs := CollisionShape3D.new()
+		var sh := BoxShape3D.new()
+		sh.size = bm.size
+		cs.shape = sh
+		cs.transform = Transform3D(basis, c)
+		body.add_child(cs)
 
 
 func _lights() -> void:
