@@ -14,6 +14,9 @@ const Aircraft = preload("res://scripts/plane.gd")
 const Heli = preload("res://scripts/heli.gd")
 const C130 = preload("res://scripts/c130.gd")
 const Car = preload("res://scripts/car.gd")
+const Sam = preload("res://scripts/sam.gd")
+const Village = preload("res://scripts/village.gd")
+const Tank = preload("res://scripts/tank.gd")
 const AA = preload("res://scripts/aa.gd")
 const BigMap = preload("res://scripts/bigmap.gd")
 const Chat = preload("res://scripts/chat.gd")
@@ -31,6 +34,7 @@ const RESPAWN_PVP := 5.0
 const MAX_CORPSES := 6
 
 var _level: Level
+var village                      # wioska na południe od bazy (village.gd)
 var waypoint := Vector3.INF      # punkt nawigacyjny z mapy [M]
 var chat                         # czat [Enter] (chat.gd)
 var _player: Node3D
@@ -53,6 +57,10 @@ func _ready() -> void:
 	_level.name = "Level"
 	add_child(_level)
 	_level.build()
+	village = Village.new()
+	village.name = "Village"
+	add_child(village)
+	village.build(_level.terrain.t3d)
 	if _level.is_ready():
 		_spawn_crates()
 	else:
@@ -122,6 +130,9 @@ func _start_solo() -> void:
 	add_child(player)
 	_player = player
 	_spawn_planes()
+	if get_tree().get_nodes_in_group("civilian").is_empty():
+		village.spawn_people()
+		village.spawn_traffic()
 	_make_hud(player)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_when_nav(_spawn_squads)
@@ -145,6 +156,7 @@ const MAX_BOT_CORPSES := 14
 
 var _bot_n := 0
 var _bot_queue: Array = []       # czasy odrodzenia zabitych botów
+var _ally_queue: Array = []      # czasy odrodzenia zabitych sojuszników (solo)
 var _bot_corpses: Array = []
 var _bot_net_t := 0.0
 var _got_bots := false
@@ -186,12 +198,25 @@ func _spawn_squads() -> void:
 			if n >= want:
 				break
 	_send_bots(made)
+	if not Player.net_on:
+		for i in Settings.ALLY_COUNTS[Settings.ally_bots]:
+			_spawn_ally()
 
 
-func _spawn_bot(post: Vector3) -> Node:
+## Sojusznik (solo): obok gracza, idzie za nim.
+func _spawn_ally() -> Node:
+	var c: Vector3 = _player.global_position if is_instance_valid(_player) else _level.spawn_player
+	var a := _rng.randf() * TAU
+	var npc = _spawn_bot(c + Vector3(cos(a), 0, sin(a)) * _rng.randf_range(4.0, 9.0), true)
+	npc.leader = _player
+	return npc
+
+
+func _spawn_bot(post: Vector3, ally := false) -> Node:
 	var off := Vector3(_rng.randf_range(-2.5, 2.5), 0, _rng.randf_range(-2.5, 2.5))
 	var p := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, post + off)
 	var npc := Npc.new()
+	npc.ally = ally
 	_bot_n += 1
 	npc.name = "Bot%d" % _bot_n
 	npc.position = Vector3(p.x, 0.0, p.z)
@@ -202,7 +227,10 @@ func _spawn_bot(post: Vector3) -> Node:
 
 
 func _on_bot_down(npc: Node) -> void:
-	_bot_queue.append(_clock + BOT_RESPAWN)
+	if npc.ally:
+		_ally_queue.append(_clock + BOT_RESPAWN)
+	else:
+		_bot_queue.append(_clock + BOT_RESPAWN)
 	_keep_corpse(npc)
 
 
@@ -222,6 +250,11 @@ func _tick_bots(dt: float) -> void:
 	if _air_t <= 0.0:
 		_air_t = 4.0
 		_staff_aircraft()
+	# sojusznicy: wracają obok gracza
+	if not _ally_queue.is_empty() and _clock >= float(_ally_queue[0]):
+		_ally_queue.pop_front()
+		if Settings.bot_respawn and not Player.net_on and not _player.down:
+			_spawn_ally()
 	# odradzanie: posterunek daleko od graczy
 	if not _bot_queue.is_empty() and _clock >= float(_bot_queue[0]):
 		_bot_queue.pop_front()
@@ -261,11 +294,20 @@ func _staff_aircraft() -> void:
 		return
 	var crafts: Array = get_tree().get_nodes_in_group("aircraft")
 	var flying := 0
+	var allies := 0
 	for a in crafts:
 		if a.ai != null and a.pilot != null and is_instance_valid(a.pilot) and not a.pilot.down:
-			flying += 1
+			if a.pilot.get("ally") == true:
+				allies += 1
+			else:
+				flying += 1
+	# sojusznicy-piloci tylko w solo; najpierw brakujący wróg, potem brakujący sojusznik
+	var ally := false
 	if flying >= Settings.air_bots:
-		return
+		if Player.net_on or allies >= Settings.ally_air:
+			return
+		ally = true
+		flying = allies
 	# na zmianę śmigłowce i samoloty, tylko maszyny stojące na swoim miejscu, bez pilota
 	crafts.shuffle()
 	crafts.sort_custom(func(a, b): return int(a.get("is_heli") == true) > int(b.get("is_heli") == true) if flying % 2 == 0 else int(a.get("is_heli") == true) < int(b.get("is_heli") == true))
@@ -273,6 +315,7 @@ func _staff_aircraft() -> void:
 		if a.destroyed or a.pilot != null or not a.on_ground or a.global_position.distance_to(a.home.origin) > 3.0:
 			continue
 		var npc := Npc.new()
+		npc.ally = ally
 		_bot_n += 1
 		npc.name = "Bot%d" % _bot_n
 		npc.position = a.global_position
@@ -434,6 +477,7 @@ func _reset_world() -> void:
 	for b in get_tree().get_nodes_in_group("npc"):
 		b.queue_free()
 	_bot_queue.clear()
+	_ally_queue.clear()
 	_bot_corpses.clear()
 	Npc._covers_taken.clear()
 	Npc.deaths = 0
@@ -521,6 +565,16 @@ func _spawn_planes() -> void:
 		c.name = "Car%d" % (i + 1)
 		c.transform = _level.car_spots[i]
 		add_child(c)
+	for i in _level.sam_spots.size():
+		var sm := Sam.new()
+		sm.name = "Sam%d" % (i + 1)
+		sm.transform = _level.sam_spots[i]
+		add_child(sm)
+	for i in _level.tank_spots.size():
+		var tk := Tank.new()
+		tk.name = "Tank%d" % (i + 1)
+		tk.transform = _level.tank_spots[i]
+		add_child(tk)
 	for old in get_tree().get_nodes_in_group("emplacement"):
 		remove_child(old)
 		old.queue_free()
@@ -956,13 +1010,13 @@ func _on_lobby_joined(_n: String) -> void:
 
 ## Miejsce odrodzenia: posterunek we wsi daleko od przeciwnika (albo podany).
 func _pvp_spawn(prefer := Vector3.INF) -> Vector3:
-	var village: Array = _level.posts.slice(0, 13)
+	var spots: Array = _level.posts.slice(0, 13)
 	if prefer != Vector3.INF:
 		return prefer
 	var opp := _opponent()
 	if opp == null:
-		return village[_rng.randi() % village.size()]
-	var by_d := village.duplicate()
+		return spots[_rng.randi() % spots.size()]
+	var by_d := spots.duplicate()
 	by_d.sort_custom(func(a, b): return a.distance_to(opp.global_position) > b.distance_to(opp.global_position))
 	return by_d[_rng.randi() % 3]
 
@@ -1021,7 +1075,7 @@ func _respawn_solo() -> void:
 	for s: Vector3 in spots:
 		var near := INF
 		for b in get_tree().get_nodes_in_group("npc"):
-			if not b.down:
+			if not b.down and not b.ally:
 				near = minf(near, s.distance_to(b.global_position))
 		if near > best_d:
 			best_d = near

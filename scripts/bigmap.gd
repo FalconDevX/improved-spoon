@@ -135,6 +135,9 @@ func _draw() -> void:
 		var q := to_screen(Vector2(aa.global_position.x, aa.global_position.z))
 		draw_circle(q, 5.0, Color(0.4, 0.8, 1.0))
 		draw_string(font, q + Vector2(7, 4), "OPL" if aa.kind == "gun" else "RAK", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.6, 0.9, 1.0))
+	for n in get_tree().get_nodes_in_group("ally"):
+		if not n.down and n.vehicle == null:
+			draw_circle(to_screen(Vector2(n.global_position.x, n.global_position.z)), 4.0, Color(0.35, 0.65, 1.0))
 	var me = main._player
 	for pl in get_tree().get_nodes_in_group("plane"):
 		if pl.destroyed:
@@ -143,8 +146,9 @@ func _draw() -> void:
 		var fw: Vector3 = -pl.global_basis.z
 		var d := Vector2(fw.x, fw.z).normalized() if Vector2(fw.x, fw.z).length() > 0.01 else Vector2.UP
 		var sd := Vector2(-d.y, d.x)
-		var enemy: bool = pl.pilot != null and is_instance_valid(pl.pilot) and pl.pilot != me
-		var col := Color(1.0, 0.3, 0.2) if enemy else Color(0.75, 0.88, 1.0)
+		var enemy: bool = pl.pilot != null and is_instance_valid(pl.pilot) and pl.pilot != me and pl.pilot.get("ally") != true
+		var friend: bool = pl.pilot != null and is_instance_valid(pl.pilot) and pl.pilot.get("ally") == true
+		var col := Color(1.0, 0.3, 0.2) if enemy else (Color(0.35, 0.65, 1.0) if friend else Color(0.75, 0.88, 1.0))
 		if pl.get("is_heli") != true and pl.BOMBS == 8 and pl.GUNS.is_empty():
 			draw_string(font, q + Vector2(10, 4), "C-130", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
 		if pl.get("is_heli") == true:

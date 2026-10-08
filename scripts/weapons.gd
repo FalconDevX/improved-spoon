@@ -32,12 +32,13 @@ const CAL := {
 # feed: "mag" (magazynek) albo "tube" (ładowanie nabój po naboju).
 # Kotwice (jednostki modelu): grip, support (lewa dłoń), butt (stopka kolby), muzzle, sight (linia celownika).
 const DB := {
-	"m4": {"name": "Colt M4A1", "model": "AssaultRifle2_1", "length": 0.84, "cal": "5.56x45", "v0": 910.0,
+	# model z teksturami PBR i własnym celownikiem holograficznym (pbr / optic: bez doklejanego kolimatora)
+	"m4": {"name": "Colt M4A1", "model": "M4_Carbine", "pbr": true, "optic": true, "length": 0.84, "cal": "5.56x45", "v0": 910.0,
 		"rpm": 800.0, "modes": ["auto", "semi"], "cap": 30, "mags": 6, "feed": "mag",
 		"reload": 2.3, "reload_empty": 2.9, "spread": 0.00058, "recoil": [0.0095, 0.0045, 0.045], "zero": 100.0,
 		"kind": "rifle", "weight": 3.4, "ads_fov": 42.0, "sound": "shot_556",
-		"grip": Vector2(-0.03, -0.06), "support": Vector2(1.75, 0.5), "butt": Vector2(-1.5, 0.45),
-		"muzzle": Vector2(3.6, 0.64), "sight": Vector2(-0.1, 1.0)},
+		"grip": Vector2(-1.35, -0.45), "support": Vector2(1.2, 0.2), "butt": Vector2(-4.6, 0.1),
+		"muzzle": Vector2(4.7, 0.273), "sight": Vector2(-1.03, 0.98)},
 	"ak": {"name": "AKM", "model": "AssaultRifle_2", "length": 0.88, "cal": "7.62x39", "v0": 715.0,
 		"rpm": 600.0, "modes": ["auto", "semi"], "cap": 30, "mags": 5, "feed": "mag",
 		"reload": 2.5, "reload_empty": 3.1, "spread": 0.0011, "recoil": [0.0135, 0.0065, 0.05], "zero": 100.0,
@@ -184,6 +185,9 @@ static var _mat_cache := {}
 func _fix_materials(mesh: Mesh) -> void:
 	if data.has("proc"):
 		return   # własne materiały (już w sRGB)
+	if data.get("pbr", false):
+		_pbr_materials(mesh)
+		return
 	for i in mesh.get_surface_count():
 		var src := mesh.surface_get_material(i) as StandardMaterial3D
 		if src == null:
@@ -198,6 +202,26 @@ func _fix_materials(mesh: Mesh) -> void:
 			m.metallic = 0.0 if wood else 0.3
 			m.roughness = 0.65 if wood else 0.55
 			m.metallic_specular = 0.4
+			_mat_cache[key] = m
+		mesh_node.set_surface_override_material(i, _mat_cache[key])
+
+
+## Model z teksturami z .mtl: importer zostawia metallic = 0 (mnożnik tekstury), a siatka
+## celownika holograficznego ma być przezroczysta i świecić.
+func _pbr_materials(mesh: Mesh) -> void:
+	for i in mesh.get_surface_count():
+		var src := mesh.surface_get_material(i) as StandardMaterial3D
+		if src == null:
+			continue
+		var key := "%s/%d" % [data["model"], i]
+		if not _mat_cache.has(key):
+			var m := src.duplicate() as StandardMaterial3D
+			if src.resource_name.ends_with("reticle"):
+				m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+				m.cull_mode = BaseMaterial3D.CULL_DISABLED
+			elif m.metallic_texture:
+				m.metallic = 1.0
 			_mat_cache[key] = m
 		mesh_node.set_surface_override_material(i, _mat_cache[key])
 
@@ -622,7 +646,7 @@ func _top_units(x0: float, x1: float) -> float:
 
 ## Kolimator (red dot) na szynie nad chwytem. Broń z lunetą celuje przez lunetę.
 func add_optics() -> void:
-	if data.get("scope", false):
+	if data.get("scope", false) or data.get("optic", false):
 		sight_point = anchor("sight")
 		return
 	var g: Vector2 = data["grip"]

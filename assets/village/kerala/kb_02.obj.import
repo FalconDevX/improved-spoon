@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://deyxpcl2os2p6"
+path="res://.godot/imported/kb_02.obj-d5506c14d75f6fc71fb51bfb75572275.mesh"
+
+[deps]
+
+files=["res://.godot/imported/kb_02.obj-d5506c14d75f6fc71fb51bfb75572275.mesh"]
+
+source_file="res://assets/village/kerala/kb_02.obj"
+dest_files=["res://.godot/imported/kb_02.obj-d5506c14d75f6fc71fb51bfb75572275.mesh", "res://.godot/imported/kb_02.obj-d5506c14d75f6fc71fb51bfb75572275.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

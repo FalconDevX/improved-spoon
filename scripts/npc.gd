@@ -60,13 +60,17 @@ var is_remote := false
 var weapon_id := ""          # z góry wybrana broń / wygląd (host przekazuje je gościowi)
 var tint_i := -1
 var vehicle = null           # bot-pilot: samolot / śmigłowiec, w którym siedzi
+var ally := false            # solo: w drużynie gracza (idzie za nim, strzela do wrogów)
+var leader: Node3D = null    # sojusznik: za kim idzie (gracz)
 var _net_pos := Vector3.ZERO
 var _net_vel := Vector3.ZERO
 
 
 func _ready() -> void:
-	team = 2   # wrogowie obu graczy (PvP: gracze to drużyny 0 i 1)
+	team = 0 if ally else 2   # wrogowie obu graczy (PvP: gracze to drużyny 0 i 1)
 	add_to_group("npc")
+	if ally:
+		add_to_group("ally")
 	if is_remote:
 		collision_layer = 0   # kukiełka: pozycję ustawia host, bez blokowania gracza przy opóźnieniu
 		collision_mask = 0
@@ -75,6 +79,9 @@ func _ready() -> void:
 		collision_mask = 1 | 2 | 4
 	# ciemniejsze, oliwkowe mundury — odcinają się od piasku i trawy
 	var tints := [Color(0.5, 0.56, 0.4), Color(0.44, 0.5, 0.36), Color(0.55, 0.5, 0.4), Color(0.42, 0.45, 0.42)]
+	if ally:
+		# sojusznicy: szaroniebieskie mundury jak gracz
+		tints = [Color(0.42, 0.5, 0.6), Color(0.38, 0.45, 0.55), Color(0.47, 0.53, 0.6)]
 	if tint_i < 0:
 		tint_i = randi() % tints.size()
 	build_soldier(tints[tint_i % tints.size()], soldier_look())
@@ -270,7 +277,7 @@ func _enter_combat() -> void:
 ## Radio / krzyk: sąsiedzi dostają pozycję gracza.
 func _alert_friends(r: float) -> void:
 	for n in get_tree().get_nodes_in_group("npc"):
-		if n == self or n.down or n.state == "combat":
+		if n == self or n.down or n.state == "combat" or n.team != team:
 			continue
 		if n.global_position.distance_to(global_position) < r:
 			n.last_known = last_known
@@ -294,6 +301,8 @@ func _think(dt: float) -> void:
 	match state:
 		"patrol":
 			rig.aim_w = 0.15
+			if _follow(dt):
+				return
 			_wait -= dt
 			if _wait <= 0.0 and _arrived():
 				_wait = randf_range(3.0, 9.0)
@@ -314,6 +323,8 @@ func _think(dt: float) -> void:
 				awareness = 0.3
 		"search":
 			rig.aim_w = 0.8
+			if ally and _leader_far(70.0):
+				state = "patrol"   # nie odchodzi daleko od gracza
 			_speed = WALK * 1.3
 			if _sees and awareness >= 1.0:
 				_enter_combat()
@@ -456,8 +467,8 @@ func limp_any() -> bool:
 func _friend_in_line(from: Vector3, to: Vector3) -> bool:
 	var seg := to - from
 	var l2 := seg.length_squared()
-	for n in get_tree().get_nodes_in_group("npc"):
-		if n == self or n.down:
+	for n in get_tree().get_nodes_in_group("soldier"):
+		if n == self or n.down or n.team != team:
 			continue
 		var p: Vector3 = n.global_position + Vector3(0, 1.2, 0)
 		var t := clampf((p - from).dot(seg) / l2, 0.0, 1.0)
@@ -568,7 +579,8 @@ func _collapse(dir: Vector3, at: Vector3, seg: String, energy: float, instant: b
 	if down:
 		return
 	_release_cover()
-	deaths += 1
+	if not ally:
+		deaths += 1
 	if vehicle != null and is_instance_valid(vehicle):
 		var v = vehicle
 		leave_vehicle(false)
@@ -578,6 +590,51 @@ func _collapse(dir: Vector3, at: Vector3, seg: String, energy: float, instant: b
 	super._collapse(dir, at, seg, energy, instant)
 	if not is_remote:
 		_alert_friends(20.0)
+
+
+# ---------------------------------------------------------------- sojusznik
+
+func _leader_pos() -> Vector3:
+	if ally and (leader == null or not is_instance_valid(leader) or leader.down):
+		leader = null   # gracz się odrodził: nowy węzeł
+		for p in get_tree().get_nodes_in_group("player"):
+			if not p.down and not String(p.name).begins_with("Dead"):
+				leader = p
+	if leader != null and is_instance_valid(leader) and not leader.down:
+		var v = leader.get("vehicle")
+		if v != null and is_instance_valid(v):
+			return v.global_position
+		return leader.global_position
+	return global_position
+
+
+func _leader_far(r: float) -> bool:
+	var lp := _leader_pos()
+	return leader != null and global_position.distance_to(lp) > r
+
+
+## Sojusznik bez wroga: trzyma się 5–12 m od gracza (dobiega, gdy został w tyle).
+## Zwraca true, gdy ruchem zajęło się podążanie.
+func _follow(dt: float) -> bool:
+	if not ally:
+		return false
+	var lp := _leader_pos()
+	if leader == null:
+		return false
+	var d := global_position.distance_to(lp)
+	_post = lp
+	_repath -= dt
+	if d > 12.0 and (_repath <= 0.0 or _arrived()):
+		_repath = 1.5
+		var a := randf() * TAU
+		var p := lp + Vector3(cos(a), 0, sin(a)) * randf_range(4.0, 8.0)
+		_set_goal(NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, p))
+	if d > 12.0:
+		_speed = RUN if d > 25.0 else WALK * 1.5
+		return true
+	if d < 4.0 and not _arrived():
+		_path = PackedVector3Array()   # nie wpada na gracza
+	return false
 
 
 # ---------------------------------------------------------------- bot-pilot
@@ -664,17 +721,24 @@ func _tick_para(dt: float) -> void:
 		_post = global_position
 
 
-## Cel: najbliższy żywy gracz (solo: gracz; PvP u hosta: także kukiełka gościa). Obecny cel
-## zostaje, chyba że inny jest wyraźnie bliżej.
+## Cel: najbliższy żywy żołnierz innej drużyny (wróg: gracz, kukiełka gościa w PvP, sojusznicy;
+## sojusznik: wrogie boty). Piloci w maszynach się nie liczą. Obecny cel zostaje, chyba że inny
+## jest wyraźnie bliżej.
 func _pick_target() -> void:
 	var best: Node3D = null
 	var best_d := INF
-	for n in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("net_player"):
-		if not is_instance_valid(n) or n.down or String(n.name).begins_with("Dead"):
+	for n in get_tree().get_nodes_in_group("soldier"):
+		if not is_instance_valid(n) or n == self or n.team == team or n.down or String(n.name).begins_with("Dead"):
 			continue
+		if n.is_in_group("npc") and (n.vehicle != null or n.is_remote):
+			continue
+		if n.is_in_group("civilian"):
+			continue   # mieszkańcy wioski nie są celem
 		var d: float = n.global_position.distance_to(global_position)
 		if n == _target:
 			d *= 0.7
+		if ally and n.global_position.distance_to(_leader_pos()) > 120.0:
+			continue   # sojusznik nie rusza na wrogów daleko od gracza
 		if d < best_d:
 			best_d = d
 			best = n

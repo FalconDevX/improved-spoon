@@ -21,6 +21,10 @@ var difficulty := 1
 var bot_respawn := false
 var air_bots := 0             # boty-piloci (samoloty i śmigłowce), 0..AIR_BOTS_MAX
 const AIR_BOTS_MAX := 5
+# solo: boty w drużynie gracza (piechota idzie za graczem, piloci polują na wrogów)
+const ALLY_COUNTS := [0, 2, 4, 6, 8, 12, 16]
+var ally_bots := 0            # indeks w ALLY_COUNTS
+var ally_air := 0             # sojusznicy-piloci, 0..AIR_BOTS_MAX
 
 
 func _ready() -> void:
@@ -35,6 +39,8 @@ func _ready() -> void:
 		difficulty = clampi(int(cf.get_value("game", "difficulty", difficulty)), 0, DIFFICULTY.size() - 1)
 		bot_respawn = bool(cf.get_value("game", "bot_respawn", bot_respawn))
 		air_bots = clampi(int(cf.get_value("game", "air_bots", air_bots)), 0, AIR_BOTS_MAX)
+		ally_bots = clampi(int(cf.get_value("game", "ally_bots", ally_bots)), 0, ALLY_COUNTS.size() - 1)
+		ally_air = clampi(int(cf.get_value("game", "ally_air", ally_air)), 0, AIR_BOTS_MAX)
 	_apply_audio()
 
 
@@ -49,6 +55,8 @@ func save() -> void:
 	cf.set_value("game", "difficulty", difficulty)
 	cf.set_value("game", "bot_respawn", bot_respawn)
 	cf.set_value("game", "air_bots", air_bots)
+	cf.set_value("game", "ally_bots", ally_bots)
+	cf.set_value("game", "ally_air", ally_air)
 	cf.save(PATH)
 	_apply_audio()
 	changed.emit()

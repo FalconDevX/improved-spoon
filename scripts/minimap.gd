@@ -3,6 +3,7 @@ extends Control
 ## Na mapie: drogi, budynki, granica, lotnisko, samoloty, wrogowie, którzy właśnie strzelali
 ## (czerwone kropki), w samolocie mapa się oddala.
 
+const ALLY := Color(0.35, 0.65, 1.0)
 const Level = preload("res://scripts/level.gd")
 
 const SIZE := 210.0
@@ -111,6 +112,11 @@ func _draw_map() -> void:
 		else:
 			v.draw_rect(Rect2(q - Vector2(s2, s2) * 0.75, Vector2(s2, s2) * 1.5), Color(1.0, 0.82, 0.25) if full else Color(0.55, 0.55, 0.55))
 			v.draw_line(q - Vector2(0, s2 * 0.6), q + Vector2(0, s2 * 0.6), Color(0.15, 0.12, 0.05), 1.2 / _zoom)
+	# sojusznicy: niebieskie kropki
+	for n in get_tree().get_nodes_in_group("ally"):
+		if n.down or n.vehicle != null:
+			continue
+		v.draw_circle(o + Vector2(n.global_position.x, n.global_position.z), 3.5 / _zoom, ALLY)
 	# samoloty
 	for pl in get_tree().get_nodes_in_group("plane"):
 		if pl.destroyed or pl == p.get("vehicle"):
@@ -118,8 +124,9 @@ func _draw_map() -> void:
 		var f: Vector3 = -pl.global_basis.z
 		var dir := Vector2(f.x, f.z).normalized() if Vector2(f.x, f.z).length() > 0.01 else Vector2.UP
 		var q := o + Vector2(pl.global_position.x, pl.global_position.z)
-		var enemy: bool = pl.pilot != null and is_instance_valid(pl.pilot) and pl.pilot != p
-		var col := Color(1.0, 0.3, 0.2) if enemy else Color(0.7, 0.85, 1.0, 0.8)
+		var enemy: bool = pl.pilot != null and is_instance_valid(pl.pilot) and pl.pilot != p and pl.pilot.get("ally") != true
+		var friend: bool = pl.pilot != null and is_instance_valid(pl.pilot) and pl.pilot.get("ally") == true
+		var col := Color(1.0, 0.3, 0.2) if enemy else (ALLY if friend else Color(0.7, 0.85, 1.0, 0.8))
 		var s := 7.0 / _zoom
 		var side := Vector2(-dir.y, dir.x)
 		v.draw_colored_polygon(PackedVector2Array([q + dir * s * 1.4, q - dir * s + side * s, q - dir * s * 0.4, q - dir * s - side * s]), col)

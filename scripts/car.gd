@@ -8,15 +8,18 @@ const Player = preload("res://scripts/player.gd")
 const FX = preload("res://scripts/fx.gd")
 const MODEL = preload("res://assets/vehicles/hummer.glb")
 
-const MAX_HP := 260.0
-const ENGINE := 2600.0          # ciężkie auto (2,4 t): ~0–50 km/h w 6–7 s
-const V_MAX := 26.0             # prędkość maksymalna ~95 km/h
-const V_REV := 5.5              # wsteczny do ~20 km/h
-const BRAKE := 90.0
-const STEER := 0.55
+# strojenie (zmienne, żeby pojazd pochodny — sam.gd — mógł je zmienić)
+var MAX_HP := 260.0
+var ENGINE := 2600.0            # ciężkie auto (2,4 t): ~0–50 km/h w 6–7 s
+var V_MAX := 26.0               # prędkość maksymalna ~95 km/h
+var V_REV := 5.5                # wsteczny do ~20 km/h
+var BRAKE := 90.0
+var STEER := 0.55
+var SEAT := Vector3(-0.45, 0.55, 0.15)    # stopy kierowcy (lewy fotel)
+var EYE := Vector3(-0.47, 1.5, 0.1)
+var CAM_DIST := 8.5             # widok z trzeciej osoby: odległość kamery
+var BOARD_AT := Vector3(-1.6, 0.0, 0.2)   # przy tych drzwiach można wsiąść
 const RESPAWN := 30.0
-const SEAT := Vector3(-0.45, 0.55, 0.15)    # stopy kierowcy (lewy fotel)
-const EYE := Vector3(-0.47, 1.5, 0.1)
 const NET_RATE := 1.0 / 20.0
 
 var board_name := "samochodu"
@@ -60,6 +63,29 @@ func _ready() -> void:
 	_build_model()
 	for mi: MeshInstance3D in _parts:
 		mi.set_meta("mat0", mi.material_override)
+	_build_body()
+	_snd = AudioStreamPlayer3D.new()
+	_snd.stream = FX._cache["engine"]
+	_snd.unit_size = 8.0
+	_snd.max_distance = 250.0
+	add_child(_snd)
+	_cam = Camera3D.new()
+	_cam.top_level = true
+	_cam.near = 0.05
+	_cam.far = 3500.0
+	add_child(_cam)
+	_smoke = _emitter(Color(0.2, 0.19, 0.18, 0.7), Color(0.35, 0.35, 0.35, 0.0), 2.5, 1.4, false)
+	_fire = _emitter(Color(1.0, 0.75, 0.3, 1.0), Color(0.9, 0.2, 0.0, 0.0), 0.5, 0.8, true)
+	home = global_transform
+	_net_xf = global_transform
+	if Player.net_on:
+		var gd := _gd()
+		for f in [net_car, net_board, net_exit, net_damage, net_explode]:
+			gd.expose_func(f)
+
+
+## Kolizja i koła (Humvee). Pojazd pochodny ma własne.
+func _build_body() -> void:
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
 	bs.size = Vector3(2.15, 1.0, 4.8)
@@ -92,24 +118,6 @@ func _ready() -> void:
 		w.add_child(tire)
 		_parts.append(tire)
 		_wheels.append(w)
-	_snd = AudioStreamPlayer3D.new()
-	_snd.stream = FX._cache["engine"]
-	_snd.unit_size = 8.0
-	_snd.max_distance = 250.0
-	add_child(_snd)
-	_cam = Camera3D.new()
-	_cam.top_level = true
-	_cam.near = 0.05
-	_cam.far = 3500.0
-	add_child(_cam)
-	_smoke = _emitter(Color(0.2, 0.19, 0.18, 0.7), Color(0.35, 0.35, 0.35, 0.0), 2.5, 1.4, false)
-	_fire = _emitter(Color(1.0, 0.75, 0.3, 1.0), Color(0.9, 0.2, 0.0, 0.0), 0.5, 0.8, true)
-	home = global_transform
-	_net_xf = global_transform
-	if Player.net_on:
-		var gd := _gd()
-		for f in [net_car, net_board, net_exit, net_damage, net_explode]:
-			gd.expose_func(f)
 
 
 func _gd() -> Node:
@@ -200,7 +208,7 @@ func _emitter(c0: Color, c1: Color, life: float, size: float, add: bool) -> GPUP
 func can_board(p) -> bool:
 	if destroyed or pilot != null:
 		return false
-	return p.global_position.distance_to(global_transform * Vector3(-1.6, 0.0, 0.2)) < 2.6
+	return p.global_position.distance_to(global_transform * BOARD_AT) < 2.6
 
 
 func board(p) -> void:
@@ -378,7 +386,7 @@ func _place_camera(rd: float) -> void:
 		_cam.global_transform = Transform3D(Basis.looking_at(aim, Vector3.UP), global_transform * EYE)
 		_cam.cull_mask = 0xFFFFF & ~Player.OWN_LAYER
 	else:
-		var tgt := global_position + Vector3.UP * 1.6 - aim * 8.5
+		var tgt := global_position + Vector3.UP * 1.6 - aim * CAM_DIST
 		var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 1.8, tgt, 1, [get_rid()])
 		var r := get_world_3d().direct_space_state.intersect_ray(q)
 		if not r.is_empty():

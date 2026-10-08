@@ -44,6 +44,10 @@ func _draw() -> void:
 			_draw_heli(font, vs, pl)
 		elif pl.get("is_emplacement") == true:
 			_draw_aa(font, vs, pl)
+		elif pl.get("is_sam") == true:
+			_draw_sam(font, vs, pl)
+		elif pl.get("is_tank") == true:
+			_draw_tank(font, vs, pl)
 		elif pl.get("is_car") == true:
 			_draw_car(font, vs, pl)
 		else:
@@ -276,6 +280,9 @@ func _draw_enemies(font: Font) -> void:
 		if cam.is_position_behind(wp):
 			continue
 		var sp := cam.unproject_position(wp)
+		if n.get("ally") == true and not n.down and n.vehicle == null:
+			# sojusznik: niebieski trójkąt nad głową (żeby go nie postrzelić)
+			draw_colored_polygon(PackedVector2Array([sp + Vector2(-6, -10), sp + Vector2(6, -10), sp]), Color(0.35, 0.65, 1.0, 0.9))
 		if xray and not n.injuries.is_empty():
 			_card(font, n, sp)
 
@@ -561,6 +568,49 @@ func _draw_car(font: Font, vs: Vector2, car) -> void:
 	draw_string(font, Vector2(x, y + 52), "W/S gaz/hamulec  A/D skręt  Spacja ręczny  V widok  F wysiądź", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.55))
 	if car.hp < car.MAX_HP * 0.25:
 		_center_text(font, "POJAZD PŁONIE — WYSIADAJ", Vector2(vs.x * 0.5, vs.y * 0.5 - 120), 22, Color(1, 0.35, 0.25, 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)))
+
+
+## Czołg: stan pojazdu, znacznik miejsca, w które mierzy lufa, przeładowanie działa.
+func _draw_tank(font: Font, vs: Vector2, pl) -> void:
+	_draw_car(font, vs, pl)
+	var c := vs * 0.5
+	var cam := get_viewport().get_camera_3d()
+	var green := Color(0.55, 1.0, 0.55, 0.9)
+	draw_line(c - Vector2(14, 0), c + Vector2(14, 0), Color(1, 1, 1, 0.5), 1.0)
+	draw_line(c - Vector2(0, 14), c + Vector2(0, 14), Color(1, 1, 1, 0.5), 1.0)
+	if cam:
+		var gp: Vector3 = pl.gun_point()
+		if not cam.is_position_behind(gp):
+			var sp := cam.unproject_position(gp)
+			var col := green if pl.reload_t <= 0.0 else Color(1, 0.6, 0.3, 0.9)
+			draw_arc(sp, 12.0, 0.0, TAU, 24, col, 2.0, true)
+			draw_circle(sp, 2.0, col)
+	var x := vs.x - 300
+	var y := vs.y - 200
+	draw_rect(Rect2(x - 12, y - 30, 300, 72), Color(0, 0, 0, 0.35))
+	draw_string(font, Vector2(x, y), "TYPE 59 — ARMATA 100 mm", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 0.92, 0.7))
+	if pl.reload_t > 0.0:
+		_bar(Vector2(x, y + 18), 160, 1.0 - pl.reload_t / pl.RELOAD, Color(1, 0.75, 0.3), "ładowanie %.1f s" % pl.reload_t, font)
+	else:
+		draw_string(font, Vector2(x, y + 30), "GOTOWE — LPM", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, green)
+
+
+## NOMADS: prędkość i stan pojazdu, celownik wieży, namierzanie, rakiety.
+func _draw_sam(font: Font, vs: Vector2, pl) -> void:
+	_draw_car(font, vs, pl)
+	var c := vs * 0.5
+	draw_arc(c, 46.0, 0.0, TAU, 40, Color(1, 1, 1, 0.3), 1.0, true)
+	draw_circle(c, 2.0, Color(0.55, 1.0, 0.55, 0.9))
+	_draw_lock_box(font, vs, pl)
+	var x := vs.x - 300
+	var y := vs.y - 220
+	draw_rect(Rect2(x - 12, y - 30, 300, 92), Color(0, 0, 0, 0.35))
+	draw_string(font, Vector2(x, y), "NOMADS — RAKIETY PRZECIWLOTNICZE", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 0.92, 0.7))
+	if pl.reload_t >= 0.0:
+		_bar(Vector2(x, y + 18), 160, pl.reload_t / pl.SAM_RELOAD, Color(1, 0.75, 0.3), "przeładowanie %d s" % ceili(pl.SAM_RELOAD - pl.reload_t), font)
+	else:
+		draw_string(font, Vector2(x, y + 38), "%d / %d" % [pl.ammo, pl.SAM_ROUNDS], HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color(1, 1, 1))
+	draw_string(font, Vector2(x, y + 56), "mysz — wieża   LPM — rakieta   PPM — przybliżenie   V — celownik", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.55))
 
 
 ## Stanowisko przeciwlotnicze: celownik, cele z wyprzedzeniem (działko), namierzanie (wyrzutnia), amunicja.

@@ -1,0 +1,16 @@
+newmtl m4_body
+Kd 1 1 1
+map_Kd m4c_body_albedo.jpg
+map_Ks m4c_body_metal.jpg
+map_Ns m4c_body_rough.jpg
+map_bump m4c_body_normal.jpg
+
+newmtl m4_brass
+Kd 1 1 1
+map_Kd m4c_brass_albedo.jpg
+map_Ks m4c_brass_metal.jpg
+map_Ns m4c_brass_rough.jpg
+
+newmtl m4_reticle
+Kd 1 1 1
+map_Kd m4c_reticle.png

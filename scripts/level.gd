@@ -20,7 +20,7 @@ var med_spots := [Vector3(22, 0, -6), Vector3(4, 0, 6), Vector3(-24, 0, 14), Vec
 	Vector3(-74, 0, 46), Vector3(-80, 0, -62), Vector3(-14, 0, 80), Vector3(6, 0, -88)]
 var posts: Array = []             # miejsca, w których startują oddziały wroga
 var road_img: Image              # maska dróg 256 × 256 na całą mapę (trawa, minimapa)
-var ground_body: StaticBody3D
+var ground_body: Node3D
 var terrain: Node3D
 const Terrain = preload("res://scripts/terrain.gd")
 var plane_spots: Array = []       # stanowiska samolotów (Transform3D, oś kadłuba nad ziemią)
@@ -31,6 +31,10 @@ var aa_spots: Array = [["gun", Vector3(8, 0, -42), 0.6], ["gun", Vector3(50, 0, 
 # transportowiec C-130 na płycie przy hangarach (oś kadłuba 3 m nad ziemią, nosem na wschód)
 var transport_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(300, 3.0, -26))]
 # wojskowe terenowe (Humvee) przy wschodniej bramie bazy, przodem na wschód
+# mobilna wyrzutnia NOMADS (sam.gd): obok aut, przodem na zachód jak one
+var sam_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(14, 0.9, 46))]
+# czołg Type 59 (tank.gd)
+var tank_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(14, 0.8, 60))]
 var car_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-4, 0.4, 34)), Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(4, 0.4, 40))]
 var no_grass: Array = []          # prostokąty (XZ) bez trawy: lądowiska
 var heli_spots: Array = [Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(26, 1.2, -30)),
@@ -168,13 +172,13 @@ void fragment() {
 	float big = n2(p * 0.03) * 0.6 + n2(p * 0.11) * 0.4;
 	float fine = n2(p * 1.7) * 0.5 + n2(p * 7.0) * 0.3 + n2(p * 31.0) * 0.2;
 	float blades = n2(p * vec2(140.0, 35.0)) * n2(p * vec2(37.0, 150.0));
-	vec3 grass = mix(vec3(0.16, 0.22, 0.09), vec3(0.29, 0.32, 0.14), big);
+	vec3 grass = mix(vec3(0.15, 0.25, 0.06), vec3(0.27, 0.38, 0.1), big);   // pod gęstą trawą: soczysta zieleń
 	grass *= 0.72 + 0.32 * fine + 0.3 * blades;
 	grass = mix(grass, vec3(0.38, 0.35, 0.2), smoothstep(0.6, 0.8, n2(p * 0.5 + 7.0)) * 0.45);  // suche kępy
 	grass = mix(grass, vec3(0.2, 0.2, 0.08), smoothstep(0.55, 0.8, n2(p * 0.9 + 31.0)) * 0.3);   // ciemniejsze, wilgotne płaty
 	vec3 dirt = mix(vec3(0.34, 0.28, 0.2), vec3(0.46, 0.39, 0.28), fine);
 	dirt *= 0.85 + 0.3 * n2(p * 45.0);
-	float patchy = smoothstep(0.55, 0.75, n2(p * 0.07 + 13.0) + fine * 0.15);
+	float patchy = smoothstep(0.68, 0.85, n2(p * 0.07 + 13.0) + fine * 0.15);
 	vec3 c = mix(grass, dirt, patchy);
 	// kamyki rozsiane po trawie i ziemi
 	float stone = smoothstep(0.86, 0.9, n2(p * 4.3 + 3.0)) * smoothstep(0.4, 0.7, n2(p * 0.6));
@@ -536,17 +540,22 @@ func _car(p: Vector2, yaw: float) -> void:
 			b.add_child(w)
 
 
+## Drzewo z generatora Tree3D (wariant i obrót z pozycji) + kolizja pnia.
 func _tree(p: Vector2, s := 1.0) -> void:
-	_cyl(Vector3(p.x, 0, p.y), 0.18 * s, 3.2 * s, "wood", "bark")
-	for k in 3:
-		var leaves := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = (1.5 - k * 0.3) * s
-		sm.height = sm.radius * 1.6
-		leaves.mesh = sm
-		leaves.material_override = _mats["leaf"]
-		leaves.position = Vector3(p.x + _rng.randf_range(-0.4, 0.4), (3.0 + k * 0.9) * s, p.y + _rng.randf_range(-0.4, 0.4))
-		add_child(leaves)
+	var body := _cyl(Vector3(p.x, 0, p.y), 0.16 * s, 3.2 * s, "wood", "bark")
+	body.get_child(1).queue_free()   # pień rysuje siatka drzewa
+	var meshes: Array = Terrain.tree3d_meshes()
+	var hsh := absi(int(p.x * 73.0) * 31 + int(p.y * 37.0))
+	var tree := MeshInstance3D.new()
+	tree.mesh = meshes[hsh % meshes.size()]
+	tree.position = Vector3(p.x, -0.05, p.y)
+	tree.rotation.y = float(hsh % 628) * 0.01
+	tree.scale = Vector3.ONE * 0.62 * s
+	tree.visibility_range_end = 900.0
+	add_child(tree)
+	# tyle losowań co dawniej (korony z kul) — reszta mapy wychodzi bez zmian
+	for k in 6:
+		_rng.randf()
 
 
 # ---------------------------------------------------------------- części mapy
@@ -708,7 +717,9 @@ func _scatter() -> void:
 func _perimeter() -> void:
 	var g0 := AIRFIELD.position.y
 	var g1 := AIRFIELD.end.y
-	for s in [[Vector3(0, 1.5, -HALF), Vector3(HALF * 2, 3, 3)], [Vector3(0, 1.5, HALF), Vector3(HALF * 2, 3, 3)],
+	# od południa brama (x -15..-5) na drogę do wioski (village.gd)
+	for s in [[Vector3(0, 1.5, -HALF), Vector3(HALF * 2, 3, 3)],
+			[Vector3((-HALF - 15.0) * 0.5, 1.5, HALF), Vector3(HALF - 15.0, 3, 3)], [Vector3((HALF - 5.0) * 0.5, 1.5, HALF), Vector3(HALF + 5.0, 3, 3)],
 			[Vector3(-HALF, 1.5, 0), Vector3(3, 3, HALF * 2)],
 			[Vector3(HALF, 1.5, (-HALF + g0) * 0.5), Vector3(3, 3, g0 + HALF)], [Vector3(HALF, 1.5, (g1 + HALF) * 0.5), Vector3(3, 3, HALF - g1)]]:
 		_box(s[0], s[1], "dirt", "sand", 0.0, 0.0, false)

@@ -46,7 +46,7 @@ func tick(dt: float) -> void:
 		return
 	_bail = randf_range(0.5, 2.0)
 	_retarget -= dt
-	if _retarget <= 0.0 or target == null or not is_instance_valid(target) or target.down:
+	if _retarget <= 0.0 or not _alive(target):
 		_retarget = 3.0
 		_pick_target()
 	_flares(dt)
@@ -56,16 +56,44 @@ func tick(dt: float) -> void:
 		_plane(dt)
 
 
+## Cel: najbliższy żołnierz innej drużyny niż pilot (wróg: gracz i sojusznicy, sojusznik: wrogie
+## boty). Siedzący w lecącej maszynie: celem jest maszyna (samolot ją goni, śmigłowiec pomija).
 func _pick_target() -> void:
 	target = null
 	var best := 2500.0
-	for n in craft.get_tree().get_nodes_in_group("player") + craft.get_tree().get_nodes_in_group("net_player"):
-		if not is_instance_valid(n) or n.down or String(n.name).begins_with("Dead"):
+	var my_team: int = craft.pilot.team if craft.pilot != null and is_instance_valid(craft.pilot) else 2
+	for n in craft.get_tree().get_nodes_in_group("soldier"):
+		if not is_instance_valid(n) or n.team == my_team or n.down or String(n.name).begins_with("Dead") or n.is_in_group("civilian"):
 			continue
-		var d: float = n.global_position.distance_to(craft.global_position)
+		var t: Node3D = n
+		var v = n.get("vehicle")
+		if v != null and is_instance_valid(v) and v.is_in_group("aircraft"):
+			if v == craft or v.destroyed or (v.on_ground and n.is_in_group("npc")):
+				continue
+			if heli and not v.on_ground:
+				continue
+			t = v
+		elif n.is_in_group("npc") and n.is_remote:
+			continue
+		var d: float = t.global_position.distance_to(craft.global_position)
+		if t != n:
+			d *= 0.6   # samolot woli walkę powietrzną
 		if d < best:
 			best = d
-			target = n
+			target = t
+
+
+func _alive(t) -> bool:
+	if t == null or not is_instance_valid(t):
+		return false
+	if t.is_in_group("aircraft"):
+		return not t.destroyed and t.pilot != null and is_instance_valid(t.pilot) and not t.pilot.down
+	return not t.down
+
+
+## Cel w powietrzu (maszyna, nie żołnierz na ziemi).
+func _air_target() -> bool:
+	return target != null and target.is_in_group("aircraft") and not target.on_ground
 
 
 ## Rakieta na mnie: flary po krótkiej reakcji (czasem za późno — można je zestrzelić).
@@ -163,7 +191,7 @@ func _plane(dt: float) -> void:
 	if dist < 900.0 and ang < 0.45 and alt > 10.0:
 		craft.trigger = true
 	# bomby: cel pod przewidywanym punktem upadku
-	if craft.bombs > 0 and alt > 60.0:
+	if craft.bombs > 0 and alt > 60.0 and not _air_target():
 		var bi: Vector3 = craft.bomb_impact()
 		if Vector2(bi.x - tp.x, bi.z - tp.z).length() < 12.0:
 			craft.start_salvo()

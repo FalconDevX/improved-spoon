@@ -41,6 +41,7 @@ var on_ground := true
 var velocity := Vector3.ZERO
 var trigger := false
 var zoom := false
+var third_person := false         # V: widok zza stanowiska
 var ammo := BELT
 var reload_t := -1.0              # >= 0: trwa przeładowanie
 var lock_cand: Node3D = null
@@ -302,6 +303,8 @@ func pilot_input(e: InputEvent) -> void:
 		zoom = true
 	elif e.is_action_released("aim"):
 		zoom = false
+	elif e.is_action_pressed("view_toggle"):
+		third_person = not third_person
 	elif e.is_action_pressed("use"):
 		request_exit()
 	elif e.is_action_pressed("ui_cancel"):
@@ -358,6 +361,19 @@ func _place_camera() -> void:
 	var eye := _seat() + Vector3(0, 1.6, 0)
 	if kind == "sam":
 		eye += Basis(Vector3.UP, _yaw) * Vector3(0.75, 0.0, 0.0)   # z boku tub (głowica celownicza)
+	if third_person:
+		# zza stanowiska: kamera za obsługą, środek obrazu dalej w kierunku celowania
+		var pivot := global_position + Vector3.UP * 2.4
+		var tgt := pivot - aim_dir() * 7.0
+		tgt.y = maxf(tgt.y, global_position.y + 1.0)
+		var q := PhysicsRayQueryParameters3D.create(pivot, tgt, 1, [get_rid()])
+		var r := get_world_3d().direct_space_state.intersect_ray(q)
+		if not r.is_empty():
+			tgt = (r["position"] as Vector3) + (pivot - tgt).normalized() * 0.3
+		_cam.global_transform = Transform3D(Basis.looking_at(aim_dir(), Vector3.UP), tgt)
+		_cam.cull_mask = 0xFFFFF
+		_cam.fov = lerpf(_cam.fov, (Settings.fov * 0.4) if zoom else Settings.fov, 0.2)
+		return
 	_cam.global_transform = Transform3D(Basis.looking_at(aim_dir(), Vector3.UP), eye)
 	_cam.cull_mask = 0xFFFFF & ~Player.OWN_LAYER
 	_cam.fov = lerpf(_cam.fov, (Settings.fov * 0.4) if zoom else Settings.fov, 0.2)
