@@ -190,7 +190,7 @@ func _rock_assets(assets) -> void:
 		ma.name = "głaz %d" % k
 		ma.scene_file = load("res://assets/terrain/rocks/Rock%s.glb" % ["A", "B", "C"][k])
 		ma.material_override = mat
-		ma.visibility_range = 500.0
+		ma.lod0_range = 400.0
 		assets.set_mesh_asset(k, ma)
 
 
@@ -239,7 +239,21 @@ static func river_points() -> Array:
 	return _river
 
 
+static var _lake: Array = []         # [x, z, promień, poziom wody]
+
+
+static func river_lake() -> Array:
+	if _lake.is_empty():
+		var j = JSON.parse_string(FileAccess.get_file_as_string("res://assets/terrain/river.json"))
+		if j.has("lake"):
+			_lake = j["lake"]
+	return _lake
+
+
 static func _near_river(x: float, z: float, r: float) -> bool:
+	var lk := river_lake()
+	if lk.size() == 4 and Vector2(x - lk[0], (z - lk[1]) * 1.3).length() < lk[2] + r:
+		return true
 	for p: Vector3 in river_points():
 		if absf(p.x - x) < r * 4.0 and Vector2(p.x - x, p.z - z).length() < r:
 			return true
@@ -265,6 +279,18 @@ func _build_river() -> void:
 			st.set_uv(v[k][1])
 			st.add_vertex(v[k][0])
 		along += l / (2.0 * w)
+	# jezioro na końcu rzeki: elipsa (jak niecka w terrain3.py, oś z ściśnięta 1,3×), brzeg chowa się w terenie
+	var lake := river_lake()
+	if lake.size() == 4:
+		var c := Vector3(lake[0], lake[3], lake[1])
+		var r: float = lake[2] + 12.0
+		for i in 48:
+			var a0 := TAU * i / 48.0
+			var a1 := TAU * (i + 1) / 48.0
+			for p: Vector3 in [c, c + Vector3(cos(a1) * r, 0, sin(a1) * r / 1.3), c + Vector3(cos(a0) * r, 0, sin(a0) * r / 1.3)]:
+				st.set_normal(Vector3.UP)
+				st.set_uv(Vector2(0.5, (p.x + p.z) / (2.0 * w)))
+				st.add_vertex(p)
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
 	var mat := ShaderMaterial.new()
@@ -284,12 +310,18 @@ float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n2(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
 void fragment() {
-	vec2 uv = UV * vec2(4.0, 4.0) - vec2(0.0, TIME * 0.6);
-	float e = 0.05;
-	float a = n2(uv * 3.0) + 0.5 * n2(uv * 7.0 + 3.0);
-	float bx = n2((uv + vec2(e, 0)) * 3.0) + 0.5 * n2((uv + vec2(e, 0)) * 7.0 + 3.0);
-	float bz = n2((uv + vec2(0, e)) * 3.0) + 0.5 * n2((uv + vec2(0, e)) * 7.0 + 3.0);
-	NORMAL_MAP = normalize(vec3((a - bx) * 4.0, (a - bz) * 4.0, 1.0)) * 0.5 + 0.5;
+	// gładkie fale: suma kierunkowych sinusów płynących z nurtem + drobna zmarszczka z szumu
+	vec2 uv = UV * vec2(6.0, 6.0) - vec2(0.0, TIME * 0.5);
+	vec2 g = vec2(0.0);
+	for (int i = 0; i < 5; i++) {
+		float fi = float(i);
+		vec2 dir = normalize(vec2(sin(fi * 2.1), 1.0 + cos(fi * 1.3)));
+		float f = 2.0 + fi * 1.7;
+		g += dir * cos(dot(uv, dir) * f + fi * 1.9 - TIME * (0.8 + fi * 0.3)) * (0.35 / (1.0 + fi));
+	}
+	g += (vec2(n2(uv * 9.0), n2(uv * 9.0 + 7.0)) - 0.5) * 0.12;
+	NORMAL_MAP = normalize(vec3(g, 1.0)) * 0.5 + 0.5;
+	NORMAL_MAP_DEPTH = 0.6;
 	// głębokość wody pod powierzchnią: płycizny przejrzyste przy brzegu
 	float d = textureLod(depth_tex, SCREEN_UV, 0.0).r;
 	vec4 wp = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, d, 1.0);
@@ -362,6 +394,8 @@ static func forest_density(x: float, z: float) -> float:
 	var h := height(x, z)
 	if h > 330.0:
 		return 0.0
+	if _near_river(x, z, 16.0):
+		return 0.0   # koryto rzeki i jezioro
 	var slope := absf(height(x + 4.0, z) - h) + absf(height(x, z + 4.0) - h)
 	if slope > 3.2:
 		return 0.0

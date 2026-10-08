@@ -325,3 +325,27 @@ static func explosion() -> AudioStreamWAV:
 		var rumble := lp2 * 9.0 * exp(-t * 1.6) * smoothstep(0.0, 0.03, t)
 		s[i] = crack + boom + rumble
 	return _wav(s)
+
+
+## Syrena alarmu przeciwlotniczego: wycie narastające i opadające (dwa przesunięte tony, wirnik),
+## ~6 s na cykl — odtwarzane w pętli.
+static func siren() -> AudioStreamWAV:
+	var n := int(RATE * 6.0)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var ph1 := 0.0
+	var ph2 := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		# 0–2,5 s w górę, 2,5–3,5 s szczyt, 3,5–6 s w dół (zamknięta pętla: koniec = początek)
+		var u := smoothstep(0.0, 2.5, t) * (1.0 - smoothstep(3.5, 6.0, t))
+		var f := 260.0 + 380.0 * u
+		ph1 += TAU * f / RATE
+		ph2 += TAU * f * 1.26 / RATE      # druga tarcza wirnika (tercja wielka)
+		var w1 := clampf(sin(ph1) * 1.6, -1.0, 1.0)
+		var w2 := clampf(sin(ph2) * 1.6, -1.0, 1.0)
+		s[i] = (w1 + w2 * 0.7) * 0.32 * (0.55 + 0.45 * u)
+	var w := _wav(s)
+	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	w.loop_end = n
+	return w

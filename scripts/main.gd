@@ -16,6 +16,8 @@ const C130 = preload("res://scripts/c130.gd")
 const Car = preload("res://scripts/car.gd")
 const Sam = preload("res://scripts/sam.gd")
 const Village = preload("res://scripts/village.gd")
+const Bunker = preload("res://scripts/bunker.gd")
+const Ufo = preload("res://scripts/ufo.gd")
 const Tank = preload("res://scripts/tank.gd")
 const AA = preload("res://scripts/aa.gd")
 const BigMap = preload("res://scripts/bigmap.gd")
@@ -61,6 +63,10 @@ func _ready() -> void:
 	village.name = "Village"
 	add_child(village)
 	village.build(_level.terrain.t3d)
+	var bunker := Bunker.new()
+	bunker.name = "Bunkers"
+	add_child(bunker)
+	bunker.build(_level.terrain.t3d, _level)
 	if _level.is_ready():
 		_spawn_crates()
 	else:
@@ -596,6 +602,11 @@ func _spawn_planes() -> void:
 		h.name = "Heli%d" % (i + 1)
 		h.transform = _level.heli_spots[i]
 		add_child(h)
+	# latający dysk na wschodnim skraju pasa (poza osią startu samolotów)
+	var u := Ufo.new()
+	u.name = "UFO1"
+	u.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(780.0, 4.6, 52.0))
+	add_child(u)
 
 
 func _make_hud(player: Node) -> void:

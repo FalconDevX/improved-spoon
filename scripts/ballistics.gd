@@ -14,7 +14,7 @@ const MAX_LIFE := 4.0
 const MIN_SPEED := 90.0
 const GRAVITY := Vector3(0, -9.81, 0)
 # prędkość, przy której zmierzono penetrację w tkance ("pen" w Weapons.CAL)
-const V_REF := {"9x19": 380.0, "5.56x45": 910.0, "7.62x39": 715.0, "7.62x51": 790.0, "12ga": 400.0, "5.45x39": 900.0, "357": 440.0, "50ae": 470.0, "338lm": 900.0, "12.7x99": 890.0, "frag": 1100.0}
+const V_REF := {"9x19": 380.0, "5.56x45": 910.0, "7.62x39": 715.0, "7.62x51": 790.0, "12ga": 400.0, "5.45x39": 900.0, "357": 440.0, "50ae": 470.0, "338lm": 900.0, "12.7x99": 890.0, "frag": 1100.0, "23x152": 970.0}
 # materiał: twardość (ile metrów tkanki "zużywa" 1 m materiału), maks. kąt rykoszetu [stopnie]
 const MATS := {
 	"concrete": {"tough": 14.0, "ric": 14.0, "fx": "dust"},
@@ -112,7 +112,7 @@ func _speed(b: Dictionary) -> float:
 ## Budżet penetracji w tkance przy obecnej prędkości [m].
 func _pen(b: Dictionary) -> float:
 	var c: Dictionary = b["c"]
-	var vr: float = V_REF[b["cal"]]
+	var vr: float = V_REF.get(b["cal"], 900.0)
 	return float(c["pen"]) * pow(clampf(_speed(b) / vr, 0.0, 1.6), 1.5)
 
 

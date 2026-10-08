@@ -358,7 +358,7 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 	var help := [
 		"Mysz - kierunek lotu (samolot leci tam, gdzie patrzysz)   W/S - gaz   A/D - ster kierunku   strzałki - drążek ręcznie",
-		"LPM - karabiny maszynowe   Spacja - bomby (seria, nalot dywanowy) / na ziemi hamulce   C - flary   V - kabina / widok z tyłu   F - wysiądź (na ziemi)",
+		"LPM - karabiny maszynowe   Spacja - bomby (seria, nalot dywanowy) / na ziemi hamulce   B - rodzaj bomb   C - flary   V - kabina / widok z tyłu   F - wysiądź (na ziemi)",
 	]
 	if show_help:
 		draw_rect(Rect2(10, 244, 820, help.size() * 20 + 14), Color(0, 0, 0, 0.45))
@@ -400,11 +400,13 @@ func _draw_plane(font: Font, vs: Vector2, pl) -> void:
 	if not show_help:
 		draw_string(font, Vector2(x, y + 168), "F1 — sterowanie samolotem", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
 	var nb: int = pl.bombs
-	if nb < pl.BOMBS:
-		var rk: float = pl.bomb_reload / Aircraft.BOMB_RELOAD
-		_bar(Vector2(x, y + 138), 160, rk, Color(1, 0.75, 0.3), "bomby: przeładowanie %d s" % ceili(Aircraft.BOMB_RELOAD - pl.bomb_reload), font)
+	var nuke: bool = pl.bomb_kind == "nuke"
+	var bcol := Color(1, 0.45, 0.3) if nuke else Color(1, 0.85, 0.5)
+	if nb < pl.bomb_max() and nb == 0:
+		var rt: float = pl.bomb_reload_time()
+		_bar(Vector2(x, y + 138), 160, pl.bomb_reload / rt, Color(1, 0.75, 0.3), "%s: podwieszanie %d s  [B] zmiana" % [pl.bomb_name(), ceili(rt - pl.bomb_reload)], font)
 	else:
-		draw_string(font, Vector2(x, y + 146), "BOMBY  %d × 50 kg  [Spacja]  — bez limitu" % nb, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.85, 0.5))
+		draw_string(font, Vector2(x, y + 146), "BOMBY  %d × %s  [Spacja]   [B] rodzaj" % [nb, pl.bomb_name()], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, bcol)
 	if cam:
 		_draw_bomb_sight(cam, pl, nb)
 		_draw_air_targets(font, cam, pl)
@@ -528,7 +530,7 @@ func _draw_heli(font: Font, vs: Vector2, pl) -> void:
 	_bar(Vector2(x, y + 80), 160, hpk, Color(0.45, 0.85, 0.45) if hpk > 0.5 else (Color(1, 0.7, 0.2) if hpk > 0.25 else Color(1, 0.3, 0.2)), "kadłub %d%%" % int(maxf(hpk, 0.0) * 100.0), font)
 	var am: int = pl.ammo
 	draw_string(font, Vector2(x, y + 124), "%d" % am, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color(1, 1, 1) if am > 0 else Color(1, 0.35, 0.3))
-	draw_string(font, Vector2(x + 90, y + 124), "2 × KM 12,7 mm", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
+	draw_string(font, Vector2(x + 90, y + 124), str(pl.get("gun_label")) if pl.get("gun_label") != null else "2 × KM 12,7 mm", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
 	var nr: int = pl.rockets
 	if nr <= 0 or (nr < pl.ROCKETS and pl.rocket_reload > 0.0):
 		_bar(Vector2(x, y + 138), 160, pl.rocket_reload / pl.ROCKET_RELOAD, Color(1, 0.75, 0.3), "rakiety: przeładowanie %d s" % ceili(pl.ROCKET_RELOAD - pl.rocket_reload), font)

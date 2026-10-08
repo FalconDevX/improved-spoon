@@ -16,6 +16,19 @@ const STUN_R := 14.0
 const PLANE_R := 10.0
 const FRAGS := 40
 
+## Rodzaje bomb (samolot przełącza [B]): nazwa, promienie wybuchu, odłamki, wielkość wybuchu, skala
+## modelu, ile wchodzi do jednej serii (część kompletu wyrzutników) i czas przeładowania.
+const KINDS := {
+	"frag": {"name": "50 kg odłamkowe", "kill": 5.5, "stun": 14.0, "plane": 10.0, "frags": 40, "blast": 1.3, "scale": 1.0, "share": 1.0, "reload": 8.0},
+	"he": {"name": "250 kg burzące", "kill": 13.0, "stun": 34.0, "plane": 22.0, "frags": 90, "blast": 2.8, "scale": 1.7, "share": 0.34, "reload": 12.0},
+	"napalm": {"name": "napalm", "kill": 3.0, "stun": 9.0, "plane": 6.0, "frags": 0, "blast": 1.1, "scale": 1.45, "share": 0.34, "reload": 12.0},
+	"cluster": {"name": "kasetowe (24 podpociski)", "kill": 0.0, "stun": 0.0, "plane": 0.0, "frags": 0, "blast": 0.4, "scale": 1.5, "share": 0.25, "reload": 14.0},
+	"bomblet": {"name": "podpocisk", "kill": 3.2, "stun": 9.0, "plane": 5.0, "frags": 10, "blast": 0.55, "scale": 0.35, "share": 0.0, "reload": 0.0},
+	"nuke": {"name": "ATOMOWA", "kill": 0.0, "stun": 0.0, "plane": 0.0, "frags": 0, "blast": 0.0, "scale": 4.2, "share": 0.0, "reload": 60.0},
+}
+const NUKE_BURST := 200.0      # wysokość wybuchu atomowego nad ziemią [m] (zapalnik zbliżeniowy)
+const CLUSTER_OPEN := 160.0    # kaseta otwiera się na tej wysokości nad ziemią
+
 
 class Frag:
 	var cal: Dictionary
@@ -37,6 +50,7 @@ var stun_r := STUN_R
 var plane_r := PLANE_R
 var frags := FRAGS
 var blast := 1.3
+var kind := "frag"
 
 
 static func frag_gun() -> Frag:
@@ -89,8 +103,36 @@ static func make_mesh(parent: Node3D) -> Node3D:
 	return root
 
 
+## Ile bomb danego rodzaju wchodzi do jednej serii przy komplecie `racks` wyrzutników.
+static func salvo_size(k: String, racks: int) -> int:
+	if k == "nuke":
+		return 1
+	return maxi(int(round(racks * float(KINDS[k]["share"]))), 1)
+
+
 func _ready() -> void:
-	make_mesh(self)
+	var c: Dictionary = KINDS[kind]
+	kill_r = c["kill"]
+	stun_r = c["stun"]
+	plane_r = c["plane"]
+	frags = c["frags"]
+	blast = c["blast"]
+	var m := make_mesh(self)
+	m.scale = Vector3.ONE * float(c["scale"])
+	if kind == "nuke":
+		preload("res://scripts/nuke.gd").alarm(get_parent(), 30.0)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.85, 0.75, 0.2)     # „Fat Man”: pękaty, żółty korpus
+		mat.metallic = 0.3
+		mat.roughness = 0.6
+		for mi in m.get_children():
+			mi.material_override = mat
+		m.scale = Vector3(5.5, 5.5, 3.2)
+	elif kind == "napalm":
+		for mi in m.get_children():
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = Color(0.55, 0.55, 0.5)
+			mi.material_override = mat
 
 
 func _physics_process(dt: float) -> void:
@@ -107,6 +149,15 @@ func _physics_process(dt: float) -> void:
 	if not r.is_empty():
 		_explode(r["position"] + (r["normal"] as Vector3) * 0.3)
 		return
+	if (kind == "nuke" or kind == "cluster") and _t > 1.0 and vel.y < 0.0:
+		var fuse := NUKE_BURST if kind == "nuke" else CLUSTER_OPEN
+		var g := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(p1, p1 + Vector3.DOWN * fuse, 1))
+		if not g.is_empty():
+			if kind == "nuke":
+				_nuke(p1)
+			else:
+				_open_cluster(p1)
+			return
 	if p1.y < -30.0 or _t > 40.0:
 		queue_free()
 		return
@@ -115,9 +166,47 @@ func _physics_process(dt: float) -> void:
 	global_basis = Basis.looking_at(d, Vector3.UP if absf(d.y) < 0.99 else Vector3.FORWARD)
 
 
+## Kaseta: rozpada się nad celem na 24 podpociski rozsypane w elipsę wzdłuż toru lotu.
+func _open_cluster(pos: Vector3) -> void:
+	FX.I.play("click", pos, 6.0, 0.1, 0.6, 60.0)
+	FX.I.explosion(pos, 0.35)
+	for i in 24:
+		var b = get_script().new()
+		b.kind = "bomblet"
+		b.shooter = shooter
+		b.vel = vel + Vector3(randfn(0.0, 1.0), randfn(0.0, 0.3), randfn(0.0, 1.0)) * 13.0
+		get_parent().add_child(b)
+		b.global_position = pos + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1))
+	queue_free()
+
+
+func _nuke(pos: Vector3) -> void:
+	var n := preload("res://scripts/nuke.gd").new()
+	n.shooter = shooter
+	get_parent().add_child(n)
+	n.global_position = pos
+	queue_free()
+
+
 func _explode(pos: Vector3) -> void:
+	if kind == "nuke":
+		_nuke(pos)
+		return
+	if kind == "cluster":
+		_open_cluster(pos + Vector3.UP)
+		return
+	if kind == "napalm":
+		var f := preload("res://scripts/napalm.gd").new()
+		f.shooter = shooter
+		f.dir = Vector3(vel.x, 0.0, vel.z).normalized() if Vector2(vel.x, vel.z).length() > 1.0 else Vector3.FORWARD
+		get_parent().add_child(f)
+		f.global_position = pos
 	FX.I.explosion(pos, blast)
-	FX.I.crater(pos)
+	if kind != "napalm":
+		FX.I.crater(pos)
+		if kind == "he":
+			FX.I.crater(pos + Vector3(1.5, 0, 0))
+			FX.I.crater(pos - Vector3(1.5, 0, 0))
 	var sh = shooter if (shooter != null and is_instance_valid(shooter)) else null
 	var my_bomb: bool = not Player.net_on or (sh != null and sh.get("is_remote") == false)
 	# fala uderzeniowa: każdy komputer liczy tylko swoich (gracz lokalny, boty)
@@ -136,8 +225,9 @@ func _explode(pos: Vector3) -> void:
 			s.vitals.blunt(clampf((stun_r - d) / stun_r, 0.1, 1.0))
 	for p in get_tree().get_nodes_in_group("player"):
 		var dp: float = p.global_position.distance_to(pos)
-		if dp < 80.0:
-			p._trauma = minf(p._trauma + 0.9 * (1.0 - dp / 80.0), 1.0)
+		var shake_r := 80.0 * maxf(blast / 1.3, 0.6)
+		if dp < shake_r:
+			p._trauma = minf(p._trauma + 0.9 * (1.0 - dp / shake_r), 1.0)
 	# samoloty obok (obrażenia liczy komputer bombowca i rozsyła)
 	if my_bomb:
 		for pl in get_tree().get_nodes_in_group("plane") + get_tree().get_nodes_in_group("car"):

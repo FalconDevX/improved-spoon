@@ -22,6 +22,7 @@ uniform sampler2D heights : filter_nearest;
 uniform vec4 runway = vec4(0.0);          // x0, z0, x1, z1 — beton pasa i płyty
 uniform vec4 hangars[3];                   // prostokąty placów przed hangarami
 uniform vec4 roads[3];                     // droga przez tunel
+uniform vec4 bunkers[3];                   // pochylnie zejść do schronów (bunker.gd)
 uniform vec4 village = vec4(0.0);          // wioska: trawa tylko na podwórkach (maska w układzie miasta)
 uniform sampler2D village_mask : filter_linear;
 uniform vec2 village_c = vec2(0.0);        // środek miasta (świat)
@@ -72,6 +73,9 @@ void vertex() {
 			m = 0.0;
 		vec4 r = hangars[i];
 		if (base.x > r.x && base.x < r.z && base.z > r.y && base.z < r.w)
+			m = 0.0;
+		vec4 bk = bunkers[i];
+		if (base.x > bk.x && base.x < bk.z && base.z > bk.y && base.z < bk.w)
 			m = 0.0;
 	}
 	vec2 bu = (base.xz + base_half) / (2.0 * base_half);
@@ -143,6 +147,10 @@ func build(level) -> void:
 		for rr: Rect2 in Terrain.TUNNEL_ROADS:
 			roads.append(Vector4(rr.position.x, rr.position.y, rr.end.x, rr.end.y))
 		mat.set_shader_parameter("roads", roads)
+		var bunk: Array[Vector4] = []
+		for br: Rect2 in preload("res://scripts/bunker.gd").ramp_rects():
+			bunk.append(Vector4(br.position.x, br.position.y, br.end.x, br.end.y))
+		mat.set_shader_parameter("bunkers", bunk)
 		var vr: Rect2 = Terrain.VILLAGE.grow(-2.0)
 		mat.set_shader_parameter("village", Vector4(vr.position.x, vr.position.y, vr.end.x, vr.end.y))
 		mat.set_shader_parameter("village_mask", vmask)

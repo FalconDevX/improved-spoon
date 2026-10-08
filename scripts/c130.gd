@@ -2,7 +2,7 @@ extends "res://scripts/plane.gd"
 ## Lockheed C-130 Hercules: czterosilnikowy transportowiec (model z pliku, ~25 tys. trójkątów).
 ## Lata jak myśliwiec (ten sam model lotu), ale jest cięższy i bardziej ociężały: mniejszy ciąg,
 ## wolniej się przechyla i pochyla, ma dużo więcej wytrzymałości. Bez karabinów; z luku w brzuchu
-## zrzuca serię 8 bomb [Spacja]. Wsiada się przy drzwiach z lewej strony kabiny.
+## zrzuca serię 8 bomb [Spacja]; [B] zmienia rodzaj — jako jedyny może wziąć bombę atomową. Wsiada się przy drzwiach z lewej strony kabiny.
 
 const MODEL_PATH := "res://assets/vehicles/c130.glb"
 
@@ -22,6 +22,7 @@ func _init() -> void:
 	AMMO = 0
 	BOMBS = 8
 	GUNS = []
+	bomb_kinds = ["frag", "he", "napalm", "cluster", "nuke"]
 	BOARD_R = 7.0
 	CAM_DIST = 42.0
 	CAM_UP = 9.0
@@ -84,7 +85,7 @@ func _build_model() -> void:
 	# luk bombowy: punkty zrzutu w brzuchu
 	for i in BOMBS:
 		var r := Node3D.new()
-		r.position = Vector3(0.0, -1.4, -2.0 + i * 0.6)
+		r.position = Vector3(0.0, -2.2, -2.0 + i * 0.6)
 		add_child(r)
 		_racks.append(r)
 

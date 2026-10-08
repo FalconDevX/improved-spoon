@@ -19,34 +19,34 @@ const Debris = preload("res://scripts/debris.gd")
 
 const LAYER := 32
 const GRAVITY := 9.81
-const GEAR_H := 1.2                        # od środka kadłuba do spodu płozy
-const SEAT := Vector3(0, -0.75, -1.5)      # stopy pilota (pozycja gracza) w układzie śmigłowca
-const EYE := Vector3(0, 0.55, -1.75)       # oczy pilota w kabinie
-const MAX_HP := 170.0
-const AMMO := 900
+var GEAR_H := 1.2                        # od środka kadłuba do spodu płozy
+var SEAT := Vector3(0, -0.75, -1.5)      # stopy pilota (pozycja gracza) w układzie śmigłowca
+var EYE := Vector3(0, 0.55, -1.75)       # oczy pilota w kabinie
+var MAX_HP := 170.0
+var AMMO := 900
 const ROCKETS := 14
 const ROCKET_RELOAD := 10.0                # rakiety bez limitu: po wystrzelaniu wszystkich przeładowanie [s]
 const ROCKET_DT := 0.16
 const ROCKET_V0 := 120.0
 const ROCKET_CONE := 0.35                  # rakiety lecą najwyżej tyle od osi kadłuba [rad]
-const GUN_DT := 0.09             # salwa z obu luf naraz
-const GUN_CONE := 1.6                      # zakres obrotu wieżyczki od osi [rad]
+var GUN_DT := 0.09             # salwa z obu luf naraz
+var GUN_CONE := 1.6                      # zakres obrotu wieżyczki od osi [rad]
 const FLARES := 4
 const FLARE_RELOAD := 12.0
 const FLARE_CD := 0.8
-const MAX_TILT := 0.38
-const CLIMB := 10.0
-const TURN := 1.8                          # obrót za wzrokiem [rad/s]
+var MAX_TILT := 0.38
+var CLIMB := 10.0
+var TURN := 1.8                          # obrót za wzrokiem [rad/s]
 const DRAG := 0.12
 const SPOOL := 4.0                         # rozkręcanie wirnika [s]
-const CRASH_VY := 8.0
-const CRASH_H := 16.0
+var CRASH_VY := 8.0
+var CRASH_H := 16.0
 const RESPAWN := 25.0
-const BOUND := 1400.0
+var BOUND := 1400.0
 const MOUSE_SENS := 0.0022
 const NET_RATE := 1.0 / 30.0
-const GUNS := [Vector3(-0.09, -1.05, -3.05), Vector3(0.09, -1.05, -3.05)]
-const PODS := [Vector3(-1.75, -0.45, -0.9), Vector3(1.75, -0.45, -0.9)]
+var GUNS := [Vector3(-0.09, -1.05, -3.05), Vector3(0.09, -1.05, -3.05)]
+var PODS := [Vector3(-1.75, -0.45, -0.9), Vector3(1.75, -0.45, -0.9)]
 
 
 class MG:
@@ -811,7 +811,7 @@ func _apply_damage(d: float) -> void:
 		return
 	var was := hp
 	hp = minf(hp - d, MAX_HP)   # ujemne d = naprawa (gracz z kluczem, [R])
-	if not on_ground and d > 0.0 and (hp <= -MAX_HP * 0.35 or d >= MAX_HP * 0.7):
+	if not on_ground and d > 0.0 and (hp <= -MAX_HP * 0.8 or d >= MAX_HP * 1.3):   # rozpad tylko przy trafieniu niemal bezpośrednim; zwykle pożar i czas na skok
 		_break_apart()
 		return
 	if hp <= 0.0 and was > 0.0:

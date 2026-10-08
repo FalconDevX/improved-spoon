@@ -82,6 +82,8 @@ var throttle := 0.0
 var ammo := AMMO
 var bombs := BOMBS
 var bomb_reload := 0.0                     # postęp przeładowania bomb [s]
+var bomb_kinds: Array = ["frag", "he", "napalm", "cluster"]   # rodzaje do wyboru [B] (C-130 ma też atomową)
+var bomb_kind := "frag"
 var _salvo := false
 var _bomb_t := 0.0
 var _bomb_k := 0
@@ -479,6 +481,8 @@ func pilot_input(e: InputEvent) -> void:
 		request_exit()
 	elif e.is_action_pressed("flares"):
 		release_flares()
+	elif e.is_action_pressed("fire_mode"):
+		cycle_bomb()
 	elif e.is_action_pressed("view_toggle"):
 		cockpit_view = not cockpit_view
 	elif e.is_action_pressed("ui_cancel"):
@@ -627,7 +631,7 @@ func _simulate(dt: float) -> void:
 	# postój przy lotnisku: dozbrojenie i naprawa
 	if on_ground and velocity.length() < 2.0 and global_position.distance_to(home.origin) < 45.0:
 		ammo = mini(ammo + int(ceil(300.0 * dt)), AMMO)
-		if bombs < BOMBS and not _salvo:
+		if bombs < bomb_max() and not _salvo:
 			_bomb_t -= dt
 			if _bomb_t <= 0.0:
 				_bomb_t = 0.4      # podwieszanie bomb jedna po drugiej
@@ -834,15 +838,17 @@ func start_salvo() -> void:
 		return
 	_salvo = true
 	_bomb_t = 0.0
+	if _local_pilot():
+		pilot._msg("Zrzut: %d × %s" % [bombs, bomb_name()])
 
 
 func _bombing(dt: float) -> void:
 	# bomby bez limitu: gdy nie ma serii, cały komplet podwiesza się w BOMB_RELOAD sekund
-	if not _salvo and bombs < BOMBS and not destroyed:
+	if not _salvo and bombs < bomb_max() and not destroyed:
 		bomb_reload += dt
-		if bomb_reload >= BOMB_RELOAD:
+		if bomb_reload >= bomb_reload_time():
 			bomb_reload = 0.0
-			bombs = BOMBS
+			bombs = bomb_max()
 			_show_racks()
 	else:
 		bomb_reload = 0.0
@@ -855,21 +861,22 @@ func _bombing(dt: float) -> void:
 			_salvo = false
 			_bomb_t = 1.0
 			return
-		var i := BOMBS - bombs
+		var i := clampi(BOMBS - bombs, 0, _racks.size() - 1)
 		var pos: Vector3 = (_racks[i] as Node3D).global_position
 		var v := velocity + Vector3.DOWN * 1.5
 		bombs -= 1
 		_show_racks()
-		_drop(pos, v)
+		_drop(pos, v, bomb_kind)
 		if Player.net_on:
-			_gd().call_func(net_bomb, pos, v)
+			_gd().call_func(net_bomb, pos, v, bomb_kind)
 		if bombs <= 0:
 			_salvo = false
 			_bomb_t = 1.0
 
 
-func _drop(pos: Vector3, v: Vector3) -> void:
+func _drop(pos: Vector3, v: Vector3, kind := "frag") -> void:
 	var b := Bomb.new()
+	b.kind = kind
 	b.vel = v
 	b.shooter = pilot
 	b.plane = self
@@ -877,6 +884,32 @@ func _drop(pos: Vector3, v: Vector3) -> void:
 	b.global_position = pos
 	b.global_basis = global_basis
 	FX.I.play("click", pos, -2.0, 0.1, 0.5, 10.0)
+
+
+## Ile bomb wybranego rodzaju mieści jedna seria.
+func bomb_max() -> int:
+	return Bomb.salvo_size(bomb_kind, BOMBS)
+
+
+func bomb_reload_time() -> float:
+	return float(Bomb.KINDS[bomb_kind]["reload"])
+
+
+func bomb_name() -> String:
+	return Bomb.KINDS[bomb_kind]["name"]
+
+
+## [B]: następny rodzaj bomb. Wyrzutniki trzeba przezbroić (krótko; atomowa dłużej).
+func cycle_bomb() -> void:
+	if _salvo:
+		return
+	var i := bomb_kinds.find(bomb_kind)
+	bomb_kind = bomb_kinds[(i + 1) % bomb_kinds.size()]
+	bombs = 0
+	bomb_reload = maxf(bomb_reload_time() - (20.0 if bomb_kind == "nuke" else 5.0), 0.0)
+	_show_racks()
+	if _local_pilot():
+		pilot._msg("Bomby: %s — podwieszanie..." % bomb_name())
 
 
 func _show_racks() -> void:
@@ -977,7 +1010,7 @@ func _apply_damage(d: float) -> void:
 		return
 	var was := hp
 	hp = minf(hp - d, MAX_HP)   # ujemne d = naprawa (gracz z kluczem, [R])
-	if not on_ground and d > 0.0 and (hp <= -MAX_HP * 0.35 or d >= MAX_HP * 0.7):
+	if not on_ground and d > 0.0 and (hp <= -MAX_HP * 0.8 or d >= MAX_HP * 1.3):   # rozpad tylko przy trafieniu niemal bezpośrednim; zwykle pożar i czas na skok
 		_break_apart()
 		return
 	if hp <= 0.0 and was > 0.0:
@@ -1182,10 +1215,10 @@ func net_explode(pos: Vector3) -> void:
 
 
 ## (zdalnie) przeciwnik zrzucił bombę — ta sama bomba spada u mnie (wybuch, odłamki, fala).
-func net_bomb(pos: Vector3, v: Vector3) -> void:
+func net_bomb(pos: Vector3, v: Vector3, kind := "frag") -> void:
 	bombs = maxi(bombs - 1, 0)
 	_show_racks()
-	_drop(pos, v)
+	_drop(pos, v, kind)
 
 
 # ---------------------------------------------------------------- katapulta, rozpad w powietrzu
