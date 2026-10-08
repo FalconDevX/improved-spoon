@@ -476,6 +476,8 @@ func pilot_input(e: InputEvent) -> void:
 		trigger = false
 	elif e.is_action_pressed("jump"):
 		if not on_ground:
+			if bombs <= 0 and not _salvo and _local_pilot():
+				pilot._msg("%s: jeszcze podwieszanie (%d s)" % [bomb_name(), ceili(bomb_reload_time() - bomb_reload)])
 			start_salvo()
 	elif e.is_action_pressed("use"):
 		request_exit()
@@ -906,7 +908,7 @@ func cycle_bomb() -> void:
 	var i := bomb_kinds.find(bomb_kind)
 	bomb_kind = bomb_kinds[(i + 1) % bomb_kinds.size()]
 	bombs = 0
-	bomb_reload = maxf(bomb_reload_time() - (20.0 if bomb_kind == "nuke" else 5.0), 0.0)
+	bomb_reload = maxf(bomb_reload_time() - (6.0 if bomb_kind == "nuke" else 5.0), 0.0)
 	_show_racks()
 	if _local_pilot():
 		pilot._msg("Bomby: %s — podwieszanie..." % bomb_name())

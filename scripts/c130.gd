@@ -22,7 +22,7 @@ func _init() -> void:
 	AMMO = 0
 	BOMBS = 8
 	GUNS = []
-	bomb_kinds = ["frag", "he", "napalm", "cluster", "nuke"]
+	bomb_kinds = ["frag", "nuke", "he", "napalm", "cluster"]   # [B] raz = atomowa
 	BOARD_R = 7.0
 	CAM_DIST = 42.0
 	CAM_UP = 9.0
