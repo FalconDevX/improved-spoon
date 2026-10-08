@@ -104,6 +104,9 @@ var _warn_beep := 0.0
 var _w := Vector3.ZERO         # prędkość kątowa w układzie samolotu: x pochylenie (nos w górę +), y odchylenie (nos w prawo +), z przechylenie (w prawo +)
 var _aim_yaw := 0.0
 var _aim_pitch := 0.0
+var _look := false                         # PPM wciśnięty: mysz obraca tylko kamerę (rozglądanie)
+var _look_yaw := 0.0
+var _look_pitch := 0.0
 var _aim_s := Vector3.FORWARD   # wygładzony kierunek celowania (instruktor)
 var _ctrl := Vector3.ZERO       # aktualne wychylenia sterów
 var _bank_cmd := 0.0
@@ -444,6 +447,7 @@ func pilot_gone(p) -> void:
 	if pilot == p:
 		pilot = null
 		trigger = false
+		_look = false
 
 
 func _seat_pilot() -> void:
@@ -464,10 +468,18 @@ func _seat_pilot() -> void:
 
 func pilot_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if _look:
+			_look_yaw = clampf(_look_yaw - e.relative.x * MOUSE_SENS * Settings.sens, -PI, PI)
+			_look_pitch = clampf(_look_pitch - e.relative.y * MOUSE_SENS * Settings.sens, -1.3, 1.3)
+			return
 		_aim_yaw -= e.relative.x * MOUSE_SENS * Settings.sens
 		_aim_pitch = clampf(_aim_pitch - e.relative.y * MOUSE_SENS * Settings.sens, -1.45, 1.45)
 		return
-	if e.is_action_pressed("attack"):
+	if e.is_action_pressed("aim"):
+		_look = true
+	elif e.is_action_released("aim"):
+		_look = false
+	elif e.is_action_pressed("attack"):
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			return
@@ -1135,7 +1147,12 @@ func _process(dt: float) -> void:
 
 
 func _place_camera(rd: float) -> void:
-	var aim := aim_dir()
+	# rozglądanie (PPM): kamera odchylona od celownika; po puszczeniu wraca za celownik
+	if not _look:
+		var back := 1.0 - exp(-6.0 * rd)
+		_look_yaw = lerpf(_look_yaw, 0.0, back)
+		_look_pitch = lerpf(_look_pitch, 0.0, back)
+	var aim := Basis.from_euler(Vector3(clampf(_aim_pitch + _look_pitch, -1.5, 1.5), _aim_yaw + _look_yaw, 0.0)) * Vector3.FORWARD
 	var spd := velocity.length()
 	if cockpit_view:
 		var eye := global_transform * EYE
