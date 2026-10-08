@@ -15,8 +15,8 @@ const FLOOR_Y := -2.4                          # podłoga ładowni
 const DECK_Y := 0.15                           # podłoga kabiny załogi
 const HINGE := Vector3(0, -2.4, 2.0)           # oś rampy
 const RAMP_LEN := 9.2
-const RAMP_UP := -0.16                         # zamknięta: lekko w górę [rad]
-const RAMP_DOWN := 0.19                        # otwarta: koniec na ziemi
+const RAMP_UP := -0.17                         # zamknięta: lekko w górę [rad] (tak leży w siatce modelu)
+const RAMP_DOWN := 0.2                         # otwarta: koniec na ziemi
 const AP_ALT := 650.0                          # autopilot: wysokość krążenia [m]
 
 var board_name := "C-17"
@@ -102,7 +102,7 @@ func _build_model() -> void:
 		glass.cull_mode = BaseMaterial3D.CULL_DISABLED
 		var parts := [["body", _tex_mat("body")], ["lwing", _tex_mat("lwing")], ["rwing", _tex_mat("rwing")],
 			["floor", _tex_mat("floor", Color(1, 1, 1), 0.8)], ["walls", _tex_mat("walls", Color(1, 1, 1), 0.85)],
-			["quilt", _tex_mat("quilt", Color(1, 1, 1), 0.9)], ["ext", grey], ["int", dark], ["glass", glass]]
+			["ext", grey], ["int", dark], ["glass", glass]]
 		for p: Array in parts:
 			_part_obj(p[0], p[1], self, OFF)
 		# rampa na osi (obrót wokół X) i tylne drzwi (unoszą się do ogona)
@@ -168,6 +168,7 @@ func _build_collision() -> void:
 	st.position = Vector3(1.6, (FLOOR_Y + DECK_Y) * 0.5 - 0.1, -21.0 + run * 0.5)
 	st.rotation.x = atan2(rise, run)      # wyżej z przodu (kabina), niżej od strony ładowni
 	add_child(st)
+	_build_stairs(rise, run)
 	# rampa (obraca się razem z modelem)
 	_ramp_body = AnimatableBody3D.new()
 	_ramp_body.sync_to_physics = false
@@ -184,16 +185,66 @@ func _build_collision() -> void:
 	_set_ramp(_ramp_a)
 
 
+## Widoczne schody do kabiny (stopnie z poręczą) i napis nad nimi.
+func _build_stairs(rise: float, run: float) -> void:
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.32, 0.34, 0.35)
+	steel.metallic = 0.6
+	steel.roughness = 0.5
+	var n := 9
+	for i in n:
+		var stp := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(1.3, 0.06, run / n + 0.05)
+		stp.mesh = bm
+		stp.material_override = steel
+		var t := (i + 0.5) / n
+		stp.position = Vector3(1.6, FLOOR_Y + rise * t, -21.0 + run * (1.0 - t))
+		add_child(stp)
+	for side: float in [-0.68, 0.68]:
+		var rail := MeshInstance3D.new()
+		var rm := BoxMesh.new()
+		rm.size = Vector3(0.05, 0.05, sqrt(rise * rise + run * run))
+		rail.mesh = rm
+		rail.material_override = steel
+		rail.position = Vector3(1.6 + side, (FLOOR_Y + DECK_Y) * 0.5 + 0.9, -21.0 + run * 0.5)
+		rail.rotation.x = atan2(rise, run)
+		add_child(rail)
+	var lab := Label3D.new()
+	lab.text = "KABINA ↑"
+	lab.font_size = 48
+	lab.pixel_size = 0.006
+	lab.modulate = Color(1.0, 0.85, 0.3)
+	lab.outline_size = 10
+	lab.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	lab.position = Vector3(1.6, FLOOR_Y + 2.2, -16.8)
+	add_child(lab)
+	var lamp := OmniLight3D.new()
+	lamp.light_color = Color(1.0, 0.9, 0.75)
+	lamp.light_energy = 1.2
+	lamp.omni_range = 8.0
+	lamp.position = Vector3(1.0, DECK_Y + 1.8, -20.0)
+	add_child(lamp)
+	# światła ładowni
+	for z in [-14.0, -7.0, 0.0, 6.0]:
+		var l := OmniLight3D.new()
+		l.light_color = Color(1.0, 0.92, 0.8)
+		l.light_energy = 1.4
+		l.omni_range = 9.0
+		l.position = Vector3(0, 1.8, z)
+		add_child(l)
+
+
 func _set_ramp(a: float) -> void:
 	_ramp_a = a
 	if _ramp:
-		_ramp.rotation.x = a
+		_ramp.rotation.x = a - RAMP_UP          # siatka rampy jest już w położeniu zamkniętym
 	if _ramp_col:
 		var b := Basis(Vector3.RIGHT, a)
 		_ramp_col.transform = Transform3D(b, HINGE + b * Vector3(0, -0.15, RAMP_LEN * 0.5))
 	if _door:
 		var k := inverse_lerp(RAMP_UP, RAMP_DOWN, a)
-		_door.position = Vector3(0, 2.6 * k, 1.5 * k)
+		_door.position = Vector3(0, 3.2 * k, 1.8 * k)
 
 
 ## Czy punkt (świat) jest we wnętrzu samolotu.
