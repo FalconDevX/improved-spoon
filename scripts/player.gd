@@ -347,10 +347,11 @@ func _movement(dt: float) -> void:
 	else:
 		velocity.y -= GRAVITY * dt
 	move_and_slide()
+	# sprint: ~12 s od pełnej; odpoczynek: od zera do pełnej ~4 s w miejscu, ~7 s w marszu
 	if sprinting and _move.length() > 3.0:
-		stamina = maxf(stamina - 14.0 * dt, 0.0)
+		stamina = maxf(stamina - 8.0 * dt, 0.0)
 	else:
-		stamina = minf(stamina + (9.0 if _move.length() < 2.0 else 4.0) * dt * vitals.mobility(), 100.0)
+		stamina = minf(stamina + (25.0 if _move.length() < 2.0 else 14.0) * dt * vitals.mobility(), 100.0)
 	if holding_breath:
 		breath = maxf(breath - dt, 0.0)
 	else:
