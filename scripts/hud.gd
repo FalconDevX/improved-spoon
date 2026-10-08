@@ -5,6 +5,7 @@ extends Control
 const Npc = preload("res://scripts/npc.gd")
 const Vitals = preload("res://scripts/vitals.gd")
 const Aircraft = preload("res://scripts/plane.gd")
+const Terrain = preload("res://scripts/terrain.gd")
 
 var player = null
 var xray := false
@@ -40,7 +41,9 @@ func _draw() -> void:
 		draw_string(font, Vector2(vs.x * 0.5 - 70, 70), "RENTGEN  [Tab]", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.5, 0.85, 1.0, 0.95))
 	var pl = player.vehicle
 	if pl != null and is_instance_valid(pl):
-		if pl.get("is_heli") == true:
+		if pl.get("is_v1") == true:
+			_draw_v1(font, vs, pl)
+		elif pl.get("is_heli") == true:
 			_draw_heli(font, vs, pl)
 		elif pl.get("is_emplacement") == true:
 			_draw_aa(font, vs, pl)
@@ -340,9 +343,9 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 		_center_text(font, "[R] przytrzymaj — napraw %s (%d%%)" % [what, int(k * 100.0)], at, 17, Color(0.8, 0.95, 1.0))
 		draw_rect(Rect2(at.x - 80, at.y + 8, 160, 5), Color(1, 1, 1, 0.2))
 		draw_rect(Rect2(at.x - 80, at.y + 8, 160 * k, 5), Color(0.5, 0.9, 1.0) if player.repair_t > 0.0 else Color(0.8, 0.8, 0.8, 0.7))
-	for pl in get_tree().get_nodes_in_group("plane") + get_tree().get_nodes_in_group("emplacement") + get_tree().get_nodes_in_group("car"):
+	for pl in get_tree().get_nodes_in_group("plane") + get_tree().get_nodes_in_group("emplacement") + get_tree().get_nodes_in_group("car") + get_tree().get_nodes_in_group("launcher"):
 		if pl.can_board(player):
-			_center_text(font, "[F] — wsiądź do %s" % String(pl.get("board_name") if pl.get("board_name") != null else "samolotu"),Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
+			_center_text(font, String(pl.board_text) if pl.get("board_text") != null else "[F] — wsiądź do %s" % String(pl.get("board_name") if pl.get("board_name") != null else "samolotu"),Vector2(vs.x * 0.5, vs.y * 0.5 + 150), 18, Color(0.85, 1.0, 0.8))
 			return
 	for c in get_tree().get_nodes_in_group("ammo_crate"):
 		if c.near(player):
@@ -571,6 +574,25 @@ func _draw_car(font: Font, vs: Vector2, car) -> void:
 	draw_string(font, Vector2(x, y + 52), "W/S gaz/hamulec  A/D skręt  Spacja ręczny  V widok  F wysiądź", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.55))
 	if car.hp < car.MAX_HP * 0.25:
 		_center_text(font, "POJAZD PŁONIE — WYSIADAJ", Vector2(vs.x * 0.5, vs.y * 0.5 - 120), 22, Color(1, 0.35, 0.25, 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)))
+
+
+## V-1 sterowany z pulpitu: prędkość, wysokość, paliwo, odległość od wyrzutni.
+func _draw_v1(font: Font, vs: Vector2, m) -> void:
+	var c := vs * 0.5
+	draw_arc(c, 10.0, 0.0, TAU, 24, Color(1, 1, 1, 0.6), 1.5, true)
+	var x := vs.x - 320
+	var y := vs.y - 150
+	draw_rect(Rect2(x - 12, y - 30, 320, 140), Color(0, 0, 0, 0.35))
+	draw_string(font, Vector2(x, y), "V-1   %d km/h" % int(m.speed * 3.6), HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color(1, 0.92, 0.7))
+	var alt: float = m.global_position.y - Terrain.height(m.global_position.x, m.global_position.z)
+	draw_string(font, Vector2(x, y + 26), "wysokość %d m   od wyrzutni %d m" % [int(alt), int(m.global_position.distance_to(m.rail_from))], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.85, 0.9, 1, 0.9))
+	if m.phase == 3:
+		draw_string(font, Vector2(x, y + 54), "SILNIK WYŁĄCZONY — NURKOWANIE", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 0.45, 0.3))
+	else:
+		_bar(Vector2(x, y + 46), 180, m.fuel / m.FUEL, Color(1, 0.75, 0.3), "paliwo %d s   gaz %d%%" % [int(maxf(m.fuel, 0.0)), int(m.throttle * 100.0)], font)
+	draw_string(font, Vector2(x, y + 90), "Mysz kierunek  W/S prędkość  Spacja/LPM nurkuj  F detonuj  V widok", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.55))
+	if alt < 60.0 and m.phase == 2:
+		_center_text(font, "NISKO!", Vector2(c.x, c.y - 90), 22, Color(1, 0.4, 0.3, 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)))
 
 
 ## Czołg: stan pojazdu, znacznik miejsca, w które mierzy lufa, przeładowanie działa.

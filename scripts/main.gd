@@ -18,6 +18,8 @@ const Sam = preload("res://scripts/sam.gd")
 const Village = preload("res://scripts/village.gd")
 const Bunker = preload("res://scripts/bunker.gd")
 const Ufo = preload("res://scripts/ufo.gd")
+const V1Site = preload("res://scripts/v1_site.gd")
+const Terrain = preload("res://scripts/terrain.gd")
 const Tank = preload("res://scripts/tank.gd")
 const AA = preload("res://scripts/aa.gd")
 const BigMap = preload("res://scripts/bigmap.gd")
@@ -610,6 +612,16 @@ func _spawn_planes() -> void:
 	u.name = "UFO1"
 	u.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(160.0, 4.6, 92.0))
 	add_child(u)
+	# trzy wyrzutnie V-1 na wschód od C-130, rampy skierowane na wschód wzdłuż pasa
+	for old in get_tree().get_nodes_in_group("launcher"):
+		remove_child(old)
+		old.queue_free()
+	for i in 3:
+		var z := 48.0 + 14.0 * i
+		var site := V1Site.new()
+		site.name = "V1Site%d" % (i + 1)
+		site.transform = Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(270.0, Terrain.height(270.0, z), z))
+		add_child(site)
 
 
 func _make_hud(player: Node) -> void:

@@ -349,3 +349,40 @@ static func siren() -> AudioStreamWAV:
 	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	w.loop_end = n
 	return w
+
+
+## Silnik pulsacyjny V-1 (Argus As 014): ~47 zapłonów na sekundę — chrapliwe, terkoczące
+## buczenie („buzz bomb”). Każdy cykl: ostre pyknięcie spalania, dudnienie rury i szum wylotu.
+## 1 s w pętli (całkowita liczba cykli, więc pętla jest bez szwu).
+static func pulsejet() -> AudioStreamWAV:
+	var n := RATE
+	var f0 := 47.0
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1944
+	var lp := 0.0
+	var lp2 := 0.0
+	var amp := 1.0
+	var last_cycle := -1
+	for i in n:
+		var t := float(i) / RATE
+		var ph := fmod(t * f0, 1.0)
+		var cyc := int(t * f0)
+		if cyc != last_cycle:
+			last_cycle = cyc
+			amp = rng.randf_range(0.8, 1.15)   # zapłony nierówne — „poszarpane” buczenie
+		var noise := rng.randf_range(-1.0, 1.0)
+		lp += (noise - lp) * 0.35
+		lp2 += (noise - lp2) * 0.06
+		var pop := exp(-ph * 9.0) * amp                     # wybuch mieszanki na początku cyklu
+		var tube := sin(TAU * ph) + 0.5 * sin(TAU * ph * 2.0 + 0.6) + 0.25 * sin(TAU * ph * 3.0 + 1.1)
+		var v := tube * (0.55 + 0.6 * pop)
+		v += lp * pop * 1.6                                 # trzask zapłonu
+		v += lp2 * 0.5                                       # szum strumienia
+		s[i] = clampf(v * 1.3, -1.0, 1.0)                   # przester: chrapliwość
+	var w := _wav(s)
+	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	w.loop_begin = 0
+	w.loop_end = n
+	return w

@@ -24,6 +24,7 @@ const KINDS := {
 	"napalm": {"name": "napalm", "kill": 3.0, "stun": 9.0, "plane": 6.0, "frags": 0, "blast": 1.1, "scale": 1.45, "share": 0.34, "reload": 12.0},
 	"cluster": {"name": "kasetowe (24 podpociski)", "kill": 0.0, "stun": 0.0, "plane": 0.0, "frags": 0, "blast": 0.4, "scale": 1.5, "share": 0.25, "reload": 14.0},
 	"bomblet": {"name": "podpocisk", "kill": 3.2, "stun": 9.0, "plane": 5.0, "frags": 10, "blast": 0.55, "scale": 0.35, "share": 0.0, "reload": 0.0},
+	"v1": {"name": "V-1 (850 kg amatolu)", "kill": 24.0, "stun": 60.0, "plane": 40.0, "frags": 160, "blast": 4.0, "scale": 2.2, "share": 0.0, "reload": 0.0},
 	"nuke": {"name": "ATOMOWA", "kill": 0.0, "stun": 0.0, "plane": 0.0, "frags": 0, "blast": 0.0, "scale": 4.2, "share": 0.0, "reload": 60.0},
 }
 const CLUSTER_OPEN := 160.0    # kaseta otwiera się na tej wysokości nad ziemią
