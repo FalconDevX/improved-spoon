@@ -73,6 +73,7 @@ func _ready() -> void:
 			"shot_50": Sfx.shot(0.6, 0.55, 50),
 			"engine": Sfx.engine(),
 			"pulsejet": Sfx.pulsejet(),
+			"rocket": Sfx.rocket(),
 			"boom": Sfx.explosion(),
 			"hole": TexGen.bullet_hole(),
 		}

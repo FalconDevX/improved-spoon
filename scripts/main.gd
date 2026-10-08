@@ -19,6 +19,7 @@ const Village = preload("res://scripts/village.gd")
 const Bunker = preload("res://scripts/bunker.gd")
 const Ufo = preload("res://scripts/ufo.gd")
 const V1Site = preload("res://scripts/v1_site.gd")
+const V2Site = preload("res://scripts/v2_site.gd")
 const Terrain = preload("res://scripts/terrain.gd")
 const Tank = preload("res://scripts/tank.gd")
 const AA = preload("res://scripts/aa.gd")
@@ -41,6 +42,7 @@ var _level: Level
 var village                      # wioska na południe od bazy (village.gd)
 var waypoint := Vector3.INF      # punkt nawigacyjny z mapy [M]
 var chat                         # czat [Enter] (chat.gd)
+var bigmap                       # pełna mapa [M] (bigmap.gd) — też wybór celu V-2
 var _player: Node3D
 var _hud
 var _xray := false
@@ -622,6 +624,14 @@ func _spawn_planes() -> void:
 		site.name = "V1Site%d" % (i + 1)
 		site.transform = Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(270.0, Terrain.height(270.0, z), z))
 		add_child(site)
+	# trzy stanowiska V-2 w południowo-zachodniej części bazy
+	var v2_spots := [Vector2(-100, -104), Vector2(-80, -82), Vector2(-56, -82)]
+	for i in v2_spots.size():
+		var sp: Vector2 = v2_spots[i]
+		var pad := V2Site.new()
+		pad.name = "V2Site%d" % (i + 1)
+		pad.position = Vector3(sp.x, Terrain.height(sp.x, sp.y), sp.y)
+		add_child(pad)
 
 
 func _make_hud(player: Node) -> void:
@@ -646,6 +656,7 @@ func _make_hud(player: Node) -> void:
 	bm.main = self
 	bm.level = _level
 	layer.add_child(bm)
+	bigmap = bm
 
 
 

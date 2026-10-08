@@ -386,3 +386,33 @@ static func pulsejet() -> AudioStreamWAV:
 	w.loop_begin = 0
 	w.loop_end = n
 	return w
+
+
+## Silnik rakietowy V-2: głęboki ryk (szum o niskim widmie) z trzaskami spalania — 2 s w pętli.
+static func rocket() -> AudioStreamWAV:
+	var n := RATE * 2
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1942
+	var noise := PackedFloat32Array()
+	noise.resize(n)
+	for i in n:
+		noise[i] = rng.randf_range(-1.0, 1.0)
+	# dwa przebiegi filtrów dookoła pętli: stan na końcu = stan na początku (bez szwu)
+	var lo := 0.0
+	var mid := 0.0
+	for pass_ in 2:
+		for i in n:
+			lo += (noise[i] - lo) * 0.02
+			mid += (noise[i] - mid) * 0.18
+			if pass_ == 1:
+				var crackle := 0.0
+				if rng.randf() < 0.004:
+					crackle = rng.randf_range(-1.0, 1.0) * 3.0
+				s[i] = lo * 9.0 + mid * 0.9 + crackle
+	var w := _wav(s)
+	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	w.loop_begin = 0
+	w.loop_end = n
+	return w

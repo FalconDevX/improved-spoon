@@ -25,6 +25,7 @@ const KINDS := {
 	"cluster": {"name": "kasetowe (24 podpociski)", "kill": 0.0, "stun": 0.0, "plane": 0.0, "frags": 0, "blast": 0.4, "scale": 1.5, "share": 0.25, "reload": 14.0},
 	"bomblet": {"name": "podpocisk", "kill": 3.2, "stun": 9.0, "plane": 5.0, "frags": 10, "blast": 0.55, "scale": 0.35, "share": 0.0, "reload": 0.0},
 	"v1": {"name": "V-1 (850 kg amatolu)", "kill": 24.0, "stun": 60.0, "plane": 40.0, "frags": 160, "blast": 4.0, "scale": 2.2, "share": 0.0, "reload": 0.0},
+	"v2": {"name": "V-2 (1000 kg amatolu)", "kill": 40.0, "stun": 100.0, "plane": 70.0, "frags": 260, "blast": 7.0, "scale": 2.5, "share": 0.0, "reload": 0.0},
 	"nuke": {"name": "ATOMOWA", "kill": 0.0, "stun": 0.0, "plane": 0.0, "frags": 0, "blast": 0.0, "scale": 4.2, "share": 0.0, "reload": 60.0},
 }
 const CLUSTER_OPEN := 160.0    # kaseta otwiera się na tej wysokości nad ziemią
@@ -197,8 +198,8 @@ func _explode(pos: Vector3) -> void:
 		var f := preload("res://scripts/napalm.gd").new()
 		f.shooter = shooter
 		f.dir = Vector3(vel.x, 0.0, vel.z).normalized() if Vector2(vel.x, vel.z).length() > 1.0 else Vector3.FORWARD
+		f.position = pos       # przed add_child: _ready dopasowuje płomienie do terenu w tym miejscu
 		get_parent().add_child(f)
-		f.global_position = pos
 	FX.I.explosion(pos, blast)
 	if kind != "napalm":
 		FX.I.crater(pos)

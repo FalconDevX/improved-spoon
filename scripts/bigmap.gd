@@ -12,6 +12,15 @@ var _tex: ImageTexture
 var _roads: ImageTexture
 var _zoom := 1.0
 var _center := Vector2(0, 0)    # środek widoku w metrach (x, z)
+var _pick := Callable()         # tryb wyboru celu (V-2): LPM oddaje punkt tutaj zamiast waypointu
+var _pick_title := ""
+
+
+## Otwiera mapę w trybie wyboru celu: LPM wywołuje cb(punkt świata) i zamyka mapę, Esc anuluje.
+func pick_target(title: String, cb: Callable) -> void:
+	_pick = cb
+	_pick_title = title
+	_toggle(true)
 
 
 func _ready() -> void:
@@ -33,6 +42,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		_toggle(not visible)
 		get_viewport().set_input_as_handled()
 	elif visible and e.is_action_pressed("ui_cancel"):
+		_pick = Callable()
 		_toggle(false)
 		get_viewport().set_input_as_handled()
 
@@ -80,6 +90,13 @@ func _gui_input(e: InputEvent) -> void:
 		var mb := e as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT and _frame().has_point(mb.position):
 			var w := to_world(mb.position)
+			if _pick.is_valid():
+				var cb := _pick
+				_pick = Callable()
+				_toggle(false)
+				cb.call(Vector3(w.x, Terrain.height(w.x, w.y), w.y))
+				accept_event()
+				return
 			main.waypoint = Vector3(w.x, Terrain.height(w.x, w.y), w.y)
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
 			main.waypoint = Vector3.INF
@@ -135,6 +152,14 @@ func _draw() -> void:
 		var q := to_screen(Vector2(aa.global_position.x, aa.global_position.z))
 		draw_circle(q, 5.0, Color(0.4, 0.8, 1.0))
 		draw_string(font, q + Vector2(7, 4), "OPL" if aa.kind == "gun" else "RAK", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.6, 0.9, 1.0))
+	# wyrzutnie V-1 / V-2 i lecące pociski
+	for ls in get_tree().get_nodes_in_group("launcher"):
+		var q := to_screen(Vector2(ls.global_position.x, ls.global_position.z))
+		draw_rect(Rect2(q - Vector2(4, 4), Vector2(8, 8)), Color(0.9, 0.55, 0.2))
+		draw_string(font, q + Vector2(7, 4), ls.board_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.7, 0.35))
+	for m in get_tree().get_nodes_in_group("v1_flying"):
+		var q := to_screen(Vector2(m.global_position.x, m.global_position.z))
+		draw_circle(q, 4.0, Color(1.0, 0.2, 0.15))
 	for n in get_tree().get_nodes_in_group("ally"):
 		if not n.down and n.vehicle == null:
 			draw_circle(to_screen(Vector2(n.global_position.x, n.global_position.z)), 4.0, Color(0.35, 0.65, 1.0))
@@ -179,8 +204,12 @@ func _draw() -> void:
 	var bp := f.position + Vector2(16, f.size.y - 20)
 	draw_line(bp, bp + Vector2(bar, 0), Color(1, 1, 1, 0.9), 2.0)
 	draw_string(font, bp + Vector2(0, -6), "500 m", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.9))
-	draw_string(font, Vector2(f.position.x, f.position.y - 10), "MAPA  [M]   LPM — punkt nawigacyjny   PPM — usuń   kółko — przybliżenie, środkowy — przesuń",
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.92, 0.7))
+	if _pick.is_valid():
+		draw_string(font, Vector2(f.position.x, f.position.y - 10), "%s — LPM wybiera cel   Esc — anuluj   kółko — przybliżenie" % _pick_title,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color(1, 0.4, 0.3))
+	else:
+		draw_string(font, Vector2(f.position.x, f.position.y - 10), "MAPA  [M]   LPM — punkt nawigacyjny   PPM — usuń   kółko — przybliżenie, środkowy — przesuń",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.92, 0.7))
 	draw_string(font, to_screen(Vector2(0, -Terrain.WORLD)) + Vector2(-5, 16), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 0.85, 0.4))
 
 

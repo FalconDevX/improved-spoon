@@ -20,7 +20,8 @@ const V_MAX := 200.0
 const TURN := 0.9                   # [rad/s]
 const FUEL := 150.0                 # [s] lotu z pracującym silnikiem
 const MOUSE_SENS := 0.0022
-const BOUND := 2800.0
+const BOUND := 1580.0               # świat ma ±1600 m — dalej pocisk wybucha
+const TURN_BACK := 1400.0           # od tej odległości od środka sam zawraca nad mapę
 
 const NET_RATE := 1.0 / 20.0
 
@@ -50,6 +51,8 @@ var shooter_remote = null           # gracz, który odpalił (u innych graczy: j
 var _net_t := 0.0
 var _net_pos := Vector3.ZERO
 var _net_rot := Quaternion.IDENTITY
+var _net_age := 0.0
+var _edge_msg := false
 
 
 func _ready() -> void:
@@ -162,6 +165,7 @@ func net_state(pos: Vector3, rot: Quaternion, spd: float, ph: int) -> void:
 		phase = 2
 	_net_pos = pos
 	_net_rot = rot
+	_net_age = 0.0
 	speed = spd
 	if global_position.distance_to(pos) > 60.0:
 		global_position = pos
@@ -203,7 +207,9 @@ func _physics_process(dt: float) -> void:
 		queue_free()     # odpalający gracz się rozłączył — pocisk znika
 		return
 	if remote and phase >= 2:
-		_net_pos += -global_basis.z * speed * dt
+		_net_age += dt
+		if _net_age < 0.5:      # bez nowych paczek nie zgaduj dalej (pocisk uciekał za mapę)
+			_net_pos += -global_basis.z * speed * dt
 		global_position = global_position.lerp(_net_pos, 1.0 - exp(-10.0 * dt))
 		global_basis = Basis(global_basis.get_rotation_quaternion().slerp(_net_rot, 1.0 - exp(-10.0 * dt)))
 		if phase == 2:
@@ -237,6 +243,16 @@ func _physics_process(dt: float) -> void:
 		if pilot != null and pilot.get("is_remote") == false and not Player.chat_open:
 			throttle = clampf(throttle + Input.get_axis("move_back", "move_forward") * dt * 0.5, 0.0, 1.0)
 		var want := aim_dir() if pilot != null else fwd
+		# granica mapy: zawraca w stronę środka (wysokość według celownika)
+		var gp := global_position
+		if maxf(absf(gp.x), absf(gp.z)) > TURN_BACK:
+			var home := Vector3(-gp.x, 0, -gp.z).normalized()
+			want = (home + Vector3.UP * clampf(want.y, -0.3, 0.3)).normalized()
+			if not _edge_msg and pilot != null and is_instance_valid(pilot) and not pilot.is_remote:
+				pilot._msg("Granica mapy — V-1 zawraca")
+			_edge_msg = true
+		else:
+			_edge_msg = false
 		var ang := fwd.angle_to(want)
 		var nf := fwd
 		if ang > 0.0001:
@@ -271,7 +287,7 @@ func _physics_process(dt: float) -> void:
 		if _net_t <= 0.0:
 			_net_t = NET_RATE
 			site.get_node("/root/GDSync").call_func_unreliable(site.net_fly, global_position, global_basis.get_rotation_quaternion(), speed, phase)
-	if absf(p1.x) > BOUND or absf(p1.z) > BOUND or p1.y < -50.0 or _t > FUEL + 120.0:
+	if absf(p1.x) > BOUND or absf(p1.z) > BOUND or p1.y < -50.0 or p1.y > 3000.0 or _t > FUEL + 120.0:
 		_explode(p1)
 
 const GRAVITY_K := 9.81

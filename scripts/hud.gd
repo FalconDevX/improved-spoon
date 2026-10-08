@@ -584,11 +584,15 @@ func _draw_v1_markers(font: Font, vs: Vector2) -> void:
 	if cam == null:
 		return
 	var near := INF
+	var near_name := ""
 	for m in get_tree().get_nodes_in_group("v1_flying"):
-		if m == player.vehicle or m.phase == 4:
+		if m == player.vehicle or not is_instance_valid(m) or m.is_queued_for_deletion():
 			continue
+		var nm: String = m.marker_name if m.get("marker_name") != null else "V-1"
 		var d: float = cam.global_position.distance_to(m.global_position)
-		near = minf(near, d)
+		if d < near:
+			near = d
+			near_name = nm
 		var red := Color(1.0, 0.2, 0.15, 0.95)
 		var sp: Vector2
 		var on := not cam.is_position_behind(m.global_position)
@@ -598,7 +602,7 @@ func _draw_v1_markers(font: Font, vs: Vector2) -> void:
 		if on:
 			var r := 9.0
 			draw_polyline(PackedVector2Array([sp + Vector2(0, -r), sp + Vector2(r, 0), sp + Vector2(0, r), sp + Vector2(-r, 0), sp + Vector2(0, -r)]), red, 2.0, true)
-			draw_string(font, sp + Vector2(12, 5), "V-1  %d m" % int(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, red)
+			draw_string(font, sp + Vector2(12, 5), "%s  %d m" % [nm, int(d)], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, red)
 		else:
 			# kierunek do pocisku rzutowany na ekran: strzałka przy krawędzi
 			var lp: Vector3 = cam.global_basis.inverse() * (m.global_position - cam.global_position)
@@ -608,9 +612,9 @@ func _draw_v1_markers(font: Font, vs: Vector2) -> void:
 			var at := c + dir * k
 			var side := Vector2(-dir.y, dir.x)
 			draw_colored_polygon(PackedVector2Array([at + dir * 14.0, at - dir * 6.0 + side * 9.0, at - dir * 6.0 - side * 9.0]), red)
-			draw_string(font, at - dir * 22.0 + Vector2(-24, 5), "V-1 %d m" % int(d), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, red)
-	if near < 1500.0:
-		_center_text(font, "UWAGA — NADLATUJE V-1!", Vector2(vs.x * 0.5, 120), 22, Color(1, 0.3, 0.2, 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.01)))
+			draw_string(font, at - dir * 22.0 + Vector2(-24, 5), "%s %d m" % [nm, int(d)], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, red)
+	if near < (3000.0 if near_name == "V-2" else 1500.0):
+		_center_text(font, "UWAGA — NADLATUJE %s!" % near_name, Vector2(vs.x * 0.5, 120), 22, Color(1, 0.3, 0.2, 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.01)))
 
 
 ## V-1 sterowany z pulpitu: prędkość, wysokość, paliwo, odległość od wyrzutni.
