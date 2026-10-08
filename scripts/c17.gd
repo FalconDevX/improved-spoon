@@ -70,6 +70,8 @@ func _ready() -> void:
 	set_meta("size", Vector3(52.0, 8.0, 55.0) * K)
 	set_meta("hollow", 0.002)
 	process_physics_priority = -10            # rusza się przed żołnierzami, których przenosi
+	if Player.net_on:
+		_gd().expose_func(net_ramp)
 
 
 func _tex_mat(tex: String, col := Color(1, 1, 1), rough := 0.6) -> StandardMaterial3D:
@@ -316,8 +318,21 @@ func inside(p: Vector3) -> bool:
 
 
 func toggle_ramp() -> void:
-	ramp_open = not ramp_open
+	set_ramp_open(not ramp_open)
+	if Player.net_on:
+		_gd().call_func(net_ramp, ramp_open)
+
+
+func set_ramp_open(open: bool) -> void:
+	if open == ramp_open:
+		return
+	ramp_open = open
 	FX.I.play("bolt", global_transform * HINGE, 4.0, 0.05, 0.5, 30.0)
+
+
+## (zdalnie) inny gracz otworzył / zamknął rampę.
+func net_ramp(open: bool) -> void:
+	set_ramp_open(open)
 
 
 # ---------------------------------------------------------------- załoga
