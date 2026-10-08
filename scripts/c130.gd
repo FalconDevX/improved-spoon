@@ -7,6 +7,8 @@ extends "res://scripts/plane.gd"
 const MODEL_PATH := "res://assets/vehicles/c130.glb"
 
 var _len := 29.8
+var _spinners: Array = []      # piasty śmigieł (Node3D, obrót wokół osi Z modelu)
+var _prop_discs: Array = []    # rozmyte tarcze przy dużych obrotach
 
 
 func _init() -> void:
@@ -75,7 +77,9 @@ func _build_model() -> void:
 	EYE = SEAT + Vector3(-0.55, 2.45, -1.3)   # lewy fotel (pierwszy pilot), na wysokości szyb
 	BOARD = Vector3(-2.3, 0, -_len * 0.5 + 4.5)
 	EXIT = Vector3(-3.5, 0, -_len * 0.5 + 4.5)
-	# śmigła modelu są jedną siatką (nie kręcą się osobno); puste węzły dla wspólnego kodu
+	# śmigła: dyski śmigieł wycięte z siatki modelu i przypięte do obracających się piast (_split_props)
+	if res:
+		_split_props(m)
 	_prop = Node3D.new()
 	add_child(_prop)
 	_blades = Node3D.new()
@@ -101,3 +105,143 @@ func _ready() -> void:
 	super._ready()
 	set_meta("size", Vector3(40.0, 4.0, _len))
 	set_meta("hollow", 0.002)
+
+
+## Osie śmigieł w układzie modelu (x, y) — cztery silniki; płaszczyzna łopat ok. z = −3,5
+## (kołpak z przodu do z = −3,0, gondola za śmigłem).
+const PROP_HUBS := [Vector2(-10.31, 4.27), Vector2(-5.22, 3.95), Vector2(4.97, 3.95), Vector2(10.05, 4.27)]
+const PROP_Z := Vector2(-3.85, -2.9)     # warstwa śmigła (łopaty, kołpak) wzdłuż osi
+const PROP_R := 1.95                     # promień śmigła [m] (łopaty mają 1,82 m)
+
+
+## Śmigła są w siatce modelu zrośnięte z gondolami: trójkąty z dysku śmigła (wokół osi silnika,
+## w warstwie łopat i kołpaka) przenoszone są do osobnych siatek na obracających się piastach.
+func _split_props(m: Node3D) -> void:
+	for mi: MeshInstance3D in m.find_children("*", "MeshInstance3D", true, false):
+		var mesh := mi.mesh as ArrayMesh
+		if mesh == null or mesh.get_surface_count() != 1:
+			continue
+		# siatka -> układ modelu
+		var xf := Transform3D.IDENTITY
+		var n: Node = mi
+		while n != m and n != null:
+			xf = (n as Node3D).transform * xf
+			n = n.get_parent()
+		var arr := mesh.surface_get_arrays(0)
+		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		if idx.is_empty():
+			continue
+		var keep := PackedInt32Array()
+		var per: Array = []
+		for h in PROP_HUBS.size():
+			per.append(PackedInt32Array())
+		var hit := false
+		for t in range(0, idx.size() - 2, 3):
+			var c := xf * ((v[idx[t]] + v[idx[t + 1]] + v[idx[t + 2]]) / 3.0)
+			var hub := -1
+			if c.z > PROP_Z.x and c.z < PROP_Z.y:
+				for h in PROP_HUBS.size():
+					var hp: Vector2 = PROP_HUBS[h]
+					if Vector2(c.x - hp.x, c.y - hp.y).length() < PROP_R:
+						hub = h
+						break
+			if hub < 0:
+				keep.append(idx[t]); keep.append(idx[t + 1]); keep.append(idx[t + 2])
+			else:
+				hit = true
+				var pa: PackedInt32Array = per[hub]
+				pa.append(idx[t]); pa.append(idx[t + 1]); pa.append(idx[t + 2])
+				per[hub] = pa
+		if not hit:
+			continue
+		var mat := mi.get_active_material(0)
+		var rest := arr.duplicate()
+		rest[Mesh.ARRAY_INDEX] = keep
+		var nm := ArrayMesh.new()
+		nm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, rest)
+		nm.surface_set_material(0, mat)
+		mi.mesh = nm
+		for h in PROP_HUBS.size():
+			var sel: PackedInt32Array = per[h]
+			if sel.is_empty():
+				continue
+			_add_prop_piece(m, h, _compact(arr, sel, xf, Vector3(PROP_HUBS[h].x, PROP_HUBS[h].y, -3.5)), mat)
+
+
+## Podsiatka z wybranych trójkątów: tylko użyte wierzchołki, w układzie piasty (środek = 0).
+func _compact(arr: Array, sel: PackedInt32Array, xf: Transform3D, hub: Vector3) -> Array:
+	var remap := {}
+	var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var ns = arr[Mesh.ARRAY_NORMAL]
+	var uvs = arr[Mesh.ARRAY_TEX_UV]
+	var ov := PackedVector3Array()
+	var on := PackedVector3Array()
+	var ou := PackedVector2Array()
+	var oi := PackedInt32Array()
+	for i in sel:
+		if not remap.has(i):
+			remap[i] = ov.size()
+			ov.append(xf * vs[i] - hub)
+			if ns != null:
+				on.append((xf.basis * (ns as PackedVector3Array)[i]).normalized())
+			if uvs != null:
+				ou.append((uvs as PackedVector2Array)[i])
+		oi.append(remap[i])
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = ov
+	if ns != null:
+		out[Mesh.ARRAY_NORMAL] = on
+	if uvs != null:
+		out[Mesh.ARRAY_TEX_UV] = ou
+	out[Mesh.ARRAY_INDEX] = oi
+	return out
+
+
+## Kawałek śmigła na piaście h (piasta tworzona przy pierwszym kawałku, z rozmytą tarczą).
+func _add_prop_piece(m: Node3D, h: int, arrays: Array, mat: Material) -> void:
+	while _spinners.size() <= h:
+		_spinners.append(null)
+		_prop_discs.append(null)
+	if _spinners[h] == null:
+		var spin := Node3D.new()
+		m.add_child(spin)
+		spin.position = Vector3(PROP_HUBS[h].x, PROP_HUBS[h].y, -3.5)
+		var disc := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 1.85
+		cm.bottom_radius = 1.85
+		cm.height = 0.02
+		cm.radial_segments = 32
+		disc.mesh = cm
+		var dm := StandardMaterial3D.new()
+		dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		dm.albedo_color = Color(0.08, 0.08, 0.08, 0.25)
+		dm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		dm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		disc.material_override = dm
+		disc.rotation.x = PI * 0.5
+		disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		disc.visible = false
+		spin.add_child(disc)
+		_spinners[h] = spin
+		_prop_discs[h] = disc
+	var bm := ArrayMesh.new()
+	bm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	bm.surface_set_material(0, mat)
+	var bi := MeshInstance3D.new()
+	bi.mesh = bm
+	(_spinners[h] as Node3D).add_child(bi)
+	_parts.append(bi)
+
+
+func _process(dt: float) -> void:
+	super._process(dt)
+	if destroyed:
+		return
+	for i in _spinners.size():
+		if _spinners[i] == null:
+			continue
+		(_spinners[i] as Node3D).rotation.z = _prop_a
+		(_prop_discs[i] as MeshInstance3D).visible = _disc.visible
