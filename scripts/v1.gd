@@ -273,6 +273,14 @@ func _physics_process(dt: float) -> void:
 	_bank = lerpf(_bank, clampf(-yaw_rate * 0.6, -0.9, 0.9), 1.0 - exp(-3.0 * dt))
 	global_basis = Basis.looking_at(fwd, Vector3.UP) * Basis(Vector3.FORWARD, _bank)
 	var p1 := p0 + fwd * speed * dt
+	for a in get_tree().get_nodes_in_group("aircraft"):
+		if a.get("destroyed") == true:
+			continue
+		var sz: Vector3 = a.get_meta("size", Vector3(12, 4, 12))
+		var lp: Vector3 = a.global_transform.affine_inverse() * p1
+		if absf(lp.y) < sz.y * 0.6 + 1.0 and Vector2(lp.x, lp.z).length() < maxf(sz.x, sz.z) * 0.45 + 1.5:
+			_explode(p1)        # zderzenie w locie z maszyną
+			return
 	var excl: Array[RID] = []
 	if site != null and is_instance_valid(site) and _t < 3.0:
 		excl.append_array(site.body_rids())

@@ -186,6 +186,8 @@ func _physics_process(dt: float) -> void:
 	else:
 		vel.y -= G * dt
 	var p1 := p0 + vel * dt
+	if _hit_aircraft(p1):
+		return
 	if phase >= 3:
 		var excl: Array[RID] = []
 		if site != null and is_instance_valid(site):
@@ -206,6 +208,21 @@ func _physics_process(dt: float) -> void:
 		_explode(p1)
 
 var _ft := 0.0                      # czas od zapłonu
+
+
+## Zderzenie w locie z samolotem, śmigłowcem albo UFO (promień kolizji jest cienki — sprawdzane
+## zbliżenie do bryły maszyny): wybuch na miejscu.
+func _hit_aircraft(p: Vector3) -> bool:
+	for a in get_tree().get_nodes_in_group("aircraft"):
+		if a.get("destroyed") == true:
+			continue
+		var sz: Vector3 = a.get_meta("size", Vector3(12, 4, 12))
+		var r := maxf(sz.x, sz.z) * 0.45 + 1.0
+		var lp: Vector3 = a.global_transform.affine_inverse() * p
+		if absf(lp.y) < sz.y * 0.6 + 1.0 and Vector2(lp.x, lp.z).length() < r:
+			_explode(p)
+			return true
+	return false
 
 
 ## Prędkość, z którą lot balistyczny z punktu p trafi w cel (apogeum zależne od odległości).

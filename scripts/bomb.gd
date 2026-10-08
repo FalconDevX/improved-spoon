@@ -29,6 +29,9 @@ const KINDS := {
 	"nuke": {"name": "ATOMOWA", "kill": 0.0, "stun": 0.0, "plane": 0.0, "frags": 0, "blast": 0.0, "scale": 4.2, "share": 0.0, "reload": 60.0},
 }
 const CLUSTER_OPEN := 160.0    # kaseta otwiera się na tej wysokości nad ziemią
+const NUKE_CHUTE := 2.0        # atomowa: spadochron otwiera się tyle sekund po zrzucie
+const NUKE_SINK := 14.0        # i opada pod nim z taką prędkością [m/s] (samolot zdąży odlecieć)
+const Parachute = preload("res://scripts/parachute.gd")
 
 
 class Frag:
@@ -45,6 +48,7 @@ var vel := Vector3.ZERO
 var shooter = null      # pilot: odłamki liczą obrażenia jak jego pociski
 var plane = null        # samolot, z którego spadła (pomijany na początku lotu)
 var _t := 0.0
+var _chute: Node3D = null
 # siła wybuchu (rakieta RPG nadpisuje: mniejszy promień, mniej odłamków)
 var kill_r := KILL_R
 var stun_r := STUN_R
@@ -122,7 +126,7 @@ func _ready() -> void:
 	var m := make_mesh(self)
 	m.scale = Vector3.ONE * float(c["scale"])
 	if kind == "nuke":
-		preload("res://scripts/nuke.gd").alarm(get_parent(), 30.0)
+		preload("res://scripts/nuke.gd").alarm(get_parent(), 60.0)
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = Color(0.85, 0.75, 0.2)     # „Fat Man”: pękaty, żółty korpus
 		mat.metallic = 0.3
@@ -140,8 +144,11 @@ func _ready() -> void:
 func _physics_process(dt: float) -> void:
 	_t += dt
 	var p0 := global_position
-	vel += Vector3(0, -GRAVITY, 0) * dt
-	vel -= vel * vel.length() * DRAG * dt
+	if kind == "nuke" and _t > NUKE_CHUTE:
+		_nuke_chute(dt)
+	else:
+		vel += Vector3(0, -GRAVITY, 0) * dt
+		vel -= vel * vel.length() * DRAG * dt
 	var p1 := p0 + vel * dt
 	var excl: Array[RID] = []
 	if _t < 1.5 and plane != null and is_instance_valid(plane):
@@ -157,12 +164,34 @@ func _physics_process(dt: float) -> void:
 		if not g.is_empty():
 			_open_cluster(p1)
 			return
-	if p1.y < -30.0 or _t > 40.0:
+	if p1.y < -30.0 or _t > (180.0 if kind == "nuke" else 40.0):
 		queue_free()
 		return
 	global_position = p1
+	if _chute != null:
+		# pod czaszą: wisi nosem w dół, czasza nad nią lekko się kołysze
+		global_basis = Basis.looking_at(Vector3.DOWN, Vector3.FORWARD)
+		_chute.global_position = p1 + Vector3.UP * 1.5
+		_chute.rotation = Vector3(sin(_t * 0.9) * 0.06, _t * 0.15, cos(_t * 0.7) * 0.06)
+		return
 	var d := vel.normalized()
 	global_basis = Basis.looking_at(d, Vector3.UP if absf(d.y) < 0.99 else Vector3.FORWARD)
+
+
+## Atomowa pod spadochronem: czasza się otwiera, prędkość spada do NUKE_SINK, ruch w poziomie gaśnie.
+func _nuke_chute(dt: float) -> void:
+	if _chute == null:
+		_chute = Parachute.canopy()
+		_chute.top_level = true
+		add_child(_chute)
+		_chute.scale = Vector3.ONE * 0.3
+		FX.I.play("whoosh", global_position, 6.0, 0.05, 0.6, 80.0)
+	var open := clampf((_t - NUKE_CHUTE) / Parachute.OPEN_TIME, 0.0, 1.0)
+	_chute.scale = Vector3.ONE * lerpf(0.3, 2.6, open)       # duża czasza: bomba waży kilka ton
+	vel.y = move_toward(vel.y, -NUKE_SINK, (GRAVITY + 30.0 * open) * dt)
+	var k := exp(-0.6 * open * dt)
+	vel.x *= k
+	vel.z *= k
 
 
 ## Kaseta: rozpada się nad celem na 24 podpociski rozsypane w elipsę wzdłuż toru lotu.
