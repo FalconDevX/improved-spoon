@@ -53,6 +53,11 @@ var _groan_t := 5.0
 var _taken_cover := Vector3.INF
 var _flank := false
 var _retarget := 0.0
+# wspólne dla wszystkich botów, przebudowywane raz na klatkę fizyki (zamiast pętli „każdy z każdym”)
+static var _grid := {}          # Vector2i(komórka 2 m) -> [boty]
+static var _grid_frame := -1
+static var _teams := {}         # drużyna -> [żołnierze]
+static var _teams_frame := -1
 static var _covers_taken: Array = []
 
 # PvP: u gościa bot jest kukiełką odtwarzającą stan przysyłany przez hosta
@@ -532,8 +537,16 @@ func _move(dt: float) -> void:
 				_on_arrive()
 		else:
 			want = nxt.normalized() * spd
-	# rozpychanie
-	for n in get_tree().get_nodes_in_group("npc"):
+	# rozpychanie (tylko boty z sąsiednich komórek siatki)
+	var grid := _npc_grid()
+	var cell := Vector2i(floori(global_position.x * 0.5), floori(global_position.z * 0.5))
+	var near: Array = []
+	for gx in range(-1, 2):
+		for gz in range(-1, 2):
+			var bucket = grid.get(cell + Vector2i(gx, gz))
+			if bucket != null:
+				near.append_array(bucket)
+	for n in near:
 		if n == self or n.down:
 			continue
 		var d: Vector3 = global_position - n.global_position
@@ -721,13 +734,50 @@ func _tick_para(dt: float) -> void:
 		_post = global_position
 
 
+## Boty w komórkach 2 × 2 m (rozpychanie tylko z sąsiadami).
+func _npc_grid() -> Dictionary:
+	var f := Engine.get_physics_frames()
+	if _grid_frame != f:
+		_grid_frame = f
+		_grid.clear()
+		for n in get_tree().get_nodes_in_group("npc"):
+			if n.down:
+				continue
+			var c := Vector2i(floori(n.global_position.x * 0.5), floori(n.global_position.z * 0.5))
+			if _grid.has(c):
+				(_grid[c] as Array).append(n)
+			else:
+				_grid[c] = [n]
+	return _grid
+
+
+## Żołnierze innych drużyn (lista przebudowywana raz na klatkę fizyki).
+func _enemies() -> Array:
+	var f := Engine.get_physics_frames()
+	if _teams_frame != f:
+		_teams_frame = f
+		_teams.clear()
+		for n in get_tree().get_nodes_in_group("soldier"):
+			if n.is_in_group("civilian"):
+				continue
+			if _teams.has(n.team):
+				(_teams[n.team] as Array).append(n)
+			else:
+				_teams[n.team] = [n]
+	var out: Array = []
+	for t in _teams:
+		if t != team:
+			out.append_array(_teams[t])
+	return out
+
+
 ## Cel: najbliższy żywy żołnierz innej drużyny (wróg: gracz, kukiełka gościa w PvP, sojusznicy;
 ## sojusznik: wrogie boty). Piloci w maszynach się nie liczą. Obecny cel zostaje, chyba że inny
 ## jest wyraźnie bliżej.
 func _pick_target() -> void:
 	var best: Node3D = null
 	var best_d := INF
-	for n in get_tree().get_nodes_in_group("soldier"):
+	for n in _enemies():
 		if not is_instance_valid(n) or n == self or n.team == team or n.down or String(n.name).begins_with("Dead"):
 			continue
 		if n.is_in_group("npc") and (n.vehicle != null or n.is_remote):

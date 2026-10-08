@@ -511,6 +511,7 @@ func _reset_world() -> void:
 	if is_instance_valid(_player):
 		_drop_node(_player)
 	_spawn_planes()
+	village.spawn_people()
 	_respawn_t = 0.0
 	if _hud:
 		_hud.respawn_in = -1.0

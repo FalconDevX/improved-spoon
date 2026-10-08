@@ -292,11 +292,15 @@ func _page_game() -> Control:
 	v.add_child(_row("Sojusznicy-piloci (solo)", _option(["Brak", "1", "2", "3", "4", "5"], Settings.ally_air, func(i: int):
 		Settings.ally_air = i
 		Settings.save())))
+	var civs: Array = Settings.CIV_COUNTS.map(func(n): return str(n))
+	v.add_child(_row("Cywile w mieście", _option(civs, Settings.civilians, func(i: int):
+		Settings.civilians = i
+		Settings.save())))
 	v.add_child(_row("Odradzanie botów", _option(["Wyłączone", "Po 30 s"], 1 if Settings.bot_respawn else 0, func(i: int):
 		Settings.bot_respawn = i == 1
 		Settings.save())))
 	var l := Label.new()
-	l.text = "Liczba botów zmienia się po restarcie mapy. Boty-piloci i sojusznicy-piloci zajmują wolne samoloty i śmigłowce na bieżąco. Sojusznicy (niebiescy) idą za tobą i strzelają do wrogów — uważaj, ich też można postrzelić. Restart: wszyscy wracają na start, wyniki od zera."
+	l.text = "Liczba botów i cywilów zmienia się po restarcie mapy. Boty-piloci i sojusznicy-piloci zajmują wolne samoloty i śmigłowce na bieżąco. Sojusznicy (niebiescy) idą za tobą i strzelają do wrogów — uważaj, ich też można postrzelić. Restart: wszyscy wracają na start, wyniki od zera."
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.custom_minimum_size = Vector2(440, 0)
 	l.add_theme_font_size_override("font_size", 14)

@@ -25,6 +25,9 @@ const AIR_BOTS_MAX := 5
 const ALLY_COUNTS := [0, 2, 4, 6, 8, 12, 16]
 var ally_bots := 0            # indeks w ALLY_COUNTS
 var ally_air := 0             # sojusznicy-piloci, 0..AIR_BOTS_MAX
+# cywile w mieście (spacerują bez celu, część pracuje przy sklepach)
+const CIV_COUNTS := [0, 12, 36, 60, 100, 150, 200]
+var civilians := 2            # indeks w CIV_COUNTS (36 — jak dawniej)
 
 
 func _ready() -> void:
@@ -41,6 +44,7 @@ func _ready() -> void:
 		air_bots = clampi(int(cf.get_value("game", "air_bots", air_bots)), 0, AIR_BOTS_MAX)
 		ally_bots = clampi(int(cf.get_value("game", "ally_bots", ally_bots)), 0, ALLY_COUNTS.size() - 1)
 		ally_air = clampi(int(cf.get_value("game", "ally_air", ally_air)), 0, AIR_BOTS_MAX)
+		civilians = clampi(int(cf.get_value("game", "civilians", civilians)), 0, CIV_COUNTS.size() - 1)
 	_apply_audio()
 
 
@@ -57,6 +61,7 @@ func save() -> void:
 	cf.set_value("game", "air_bots", air_bots)
 	cf.set_value("game", "ally_bots", ally_bots)
 	cf.set_value("game", "ally_air", ally_air)
+	cf.set_value("game", "civilians", civilians)
 	cf.save(PATH)
 	_apply_audio()
 	changed.emit()

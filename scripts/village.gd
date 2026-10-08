@@ -15,8 +15,6 @@ const CITY_HALF := Vector2(68.9, 166.9)           # połowa miasta w jego układ
 const CROSS := [-147.15, -114.15, -14.15, 89.35, 140.35]   # osie ulic poprzecznych (z miasta)
 const CROSS_W := [15.5, 25.5, 25.5, 25.5, 25.5]              # ich szerokość (wolny pas między budynkami)
 const RING := 6.0                                  # obwodnica: tyle za krawędzią zabudowy
-const WALKERS := 26
-const WORKERS := 10
 const CARS := 10
 
 var nodes: Array[Vector3] = []                     # węzły sieci ulic (świat)
@@ -181,8 +179,15 @@ func next_node(a: int, b: int) -> int:
 	return nb[randi() % nb.size()]
 
 
+## Mieszkańcy: tylu, ile w opcjach (Settings.CIV_COUNTS) — ok. ćwierć pracuje przy sklepach,
+## reszta spaceruje bez celu po ulicach. Wcześniejszych usuwa (restart mapy).
 func spawn_people() -> void:
-	for i in WALKERS:
+	for c in get_tree().get_nodes_in_group("civilian"):
+		c.get_parent().remove_child(c)
+		c.queue_free()
+	var total: int = Settings.CIV_COUNTS[Settings.civilians]
+	var workers := mini(int(round(total * 0.28)), work_spots.size() * 2)
+	for i in total - workers:
 		var c := Civilian.new()
 		c.village = self
 		c.name = "Civ%d" % i
@@ -192,7 +197,7 @@ func spawn_people() -> void:
 		c.from = e[0]
 		c.to = e[1]
 		get_parent().add_child(c)
-	for i in WORKERS:
+	for i in workers:
 		var c := Civilian.new()
 		c.village = self
 		c.name = "Work%d" % i

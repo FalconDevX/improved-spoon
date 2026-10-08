@@ -22,6 +22,15 @@ var _work_t := 0.0
 var _gone_t := 0.0
 
 
+# poziom szczegółu (dużo cywilów): dalecy myślą i idą co kilka klatek, animacja rzadziej
+var _lod_i := randi() % 16
+var _lod_t := 0.0
+var _every := 1
+var _acc := 0.0
+var _anim_i := randi() % 16
+var _anim_acc := 0.0
+
+
 func _ready() -> void:
 	team = 3
 	add_to_group("civilian")
@@ -48,6 +57,20 @@ func _ready() -> void:
 
 
 func _physics_process(dt: float) -> void:
+	# dalecy: cała logika i ruch co _every klatek, z zebranym czasem (każde przesunięcie postaci
+	# przesuwa też jej strefy trafień w silniku fizyki — przy setkach cywilów to główny koszt)
+	_lod_i += 1
+	_lod_t -= dt
+	if _lod_t <= 0.0:
+		_lod_t = randf_range(0.3, 0.6)
+		var cam := get_viewport().get_camera_3d()
+		var d := cam.global_position.distance_to(global_position) if cam else 0.0
+		_every = 1 if (d < 40.0 or down) else (4 if d < 90.0 else (8 if d < 250.0 else 16))
+	_acc += dt
+	if _every > 1 and _lod_i % _every != 0:
+		return
+	dt = _acc
+	_acc = 0.0
 	_tick_vitals(dt)
 	if down:
 		_gone_t += dt
@@ -85,7 +108,10 @@ func _physics_process(dt: float) -> void:
 	velocity.x = hv.x
 	velocity.z = hv.z
 	velocity.y = -0.5 if is_on_floor() else velocity.y - GRAVITY * dt
-	move_and_slide()
+	if _every > 1 and is_on_floor():
+		global_position += hv * dt      # dalej: krok o cały zebrany czas, ulicą, bez liczenia kolizji
+	else:
+		move_and_slide()
 	if hv.length() > 0.3:
 		yaw = atan2(-hv.x, -hv.z)
 	visual.rotation.y = lerp_angle(visual.rotation.y, yaw, 1.0 - exp(-6.0 * dt))
@@ -119,11 +145,20 @@ func _goal_dir() -> Vector3:
 
 
 func _process(dt: float) -> void:
-	var far := true
 	var cam := get_viewport().get_camera_3d()
+	var k := 1
 	if cam:
-		far = cam.global_position.distance_to(global_position) > 45.0
-	_animate(dt, far)
+		var d := cam.global_position.distance_to(global_position)
+		k = 1 if d < 25.0 else (2 if d < 60.0 else (4 if d < 120.0 else (8 if d < 300.0 else 16)))
+		if not cam.is_position_in_frustum(global_position + Vector3.UP):
+			k = maxi(k, 15)
+	_anim_acc += dt
+	_anim_i += 1
+	if k > 1 and _anim_i % k != 0 and not down:
+		return
+	dt = minf(_anim_acc, 0.5)
+	_anim_acc = 0.0
+	_animate(dt, false)
 
 
 func _scare(at: Vector3, t: float) -> void:
