@@ -26,6 +26,9 @@ const KINDS := {
 	"bomblet": {"name": "podpocisk", "kill": 3.2, "stun": 9.0, "plane": 5.0, "frags": 10, "blast": 0.55, "scale": 0.35, "share": 0.0, "reload": 0.0},
 	"v1": {"name": "V-1 (850 kg amatolu)", "kill": 24.0, "stun": 60.0, "plane": 40.0, "frags": 160, "blast": 4.0, "scale": 2.2, "share": 0.0, "reload": 0.0},
 	"v2": {"name": "V-2 (1000 kg amatolu)", "kill": 40.0, "stun": 100.0, "plane": 70.0, "frags": 260, "blast": 7.0, "scale": 2.5, "share": 0.0, "reload": 0.0},
+	"moab": {"name": "MOAB (GBU-43, 8,5 t)", "kill": 60.0, "stun": 140.0, "plane": 90.0, "frags": 220, "blast": 10.0, "scale": 4.5, "share": 0.0, "reload": 40.0},
+	"thermo": {"name": "termobaryczne", "kill": 30.0, "stun": 70.0, "plane": 45.0, "frags": 60, "blast": 5.0, "scale": 2.2, "share": 0.25, "reload": 20.0},
+	"bunker": {"name": "przeciwbunkrowe (GBU-28)", "kill": 20.0, "stun": 40.0, "plane": 25.0, "frags": 80, "blast": 3.5, "scale": 1.9, "share": 0.25, "reload": 18.0},
 	"nuke": {"name": "ATOMOWA", "kill": 0.0, "stun": 0.0, "plane": 0.0, "frags": 0, "blast": 0.0, "scale": 4.2, "share": 0.0, "reload": 60.0},
 }
 const CLUSTER_OPEN := 160.0    # kaseta otwiera się na tej wysokości nad ziemią
@@ -251,6 +254,17 @@ func _explode(pos: Vector3) -> void:
 			s._collapse((c - pos).normalized(), c, "torso", 6000.0, true)
 		elif d < stun_r:
 			s.vitals.blunt(clampf((stun_r - d) / stun_r, 0.1, 1.0))
+	if kind == "bunker":
+		# przebija strop schronu: zabija ukrytych pod ziemią w promieniu 30 m
+		for s in get_tree().get_nodes_in_group("soldier"):
+			if s.down or s.get("is_remote") == true:
+				continue
+			var hp_: Vector3 = s.global_position
+			if preload("res://scripts/bunker.gd").underground(hp_) and Vector2(hp_.x - pos.x, hp_.z - pos.z).length() < 30.0:
+				if sh != null and sh != s:
+					s.last_shooter = sh
+				s.vitals._die()
+				s._collapse(Vector3.UP, s.chest_pos(), "torso", 6000.0, true)
 	for p in get_tree().get_nodes_in_group("player"):
 		var dp: float = p.global_position.distance_to(pos)
 		var shake_r := 80.0 * maxf(blast / 1.3, 0.6)

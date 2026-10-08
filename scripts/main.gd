@@ -13,6 +13,7 @@ const Level = preload("res://scripts/level.gd")
 const Aircraft = preload("res://scripts/plane.gd")
 const Heli = preload("res://scripts/heli.gd")
 const C130 = preload("res://scripts/c130.gd")
+const C17 = preload("res://scripts/c17.gd")
 const Car = preload("res://scripts/car.gd")
 const Sam = preload("res://scripts/sam.gd")
 const Village = preload("res://scripts/village.gd")
@@ -610,6 +611,11 @@ func _spawn_planes() -> void:
 		t.name = "Transport%d" % (i + 1)
 		t.transform = _level.transport_spots[i]
 		add_child(t)
+	# C-17 Globemaster na wschodnim końcu pasa, nosem na zachód (gotowy do startu)
+	var g := C17.new()
+	g.name = "Globemaster1"
+	g.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(760.0, Terrain.height(760.0, 11.0) + 4.1, 11.0))
+	add_child(g)
 	for i in _level.heli_spots.size():
 		var h := Heli.new()
 		h.name = "Heli%d" % (i + 1)
@@ -622,8 +628,9 @@ func _spawn_planes() -> void:
 	add_child(u)
 	# trzy wyrzutnie V-1 na wschód od C-130, rampy skierowane na wschód wzdłuż pasa
 	for old in get_tree().get_nodes_in_group("launcher"):
-		remove_child(old)
-		old.queue_free()
+		if old.get_parent() == self:      # wyrzutnie V-1 / V-2 (przełączniki rampy C-17 są w samolocie)
+			remove_child(old)
+			old.queue_free()
 	for i in 3:
 		var z := 48.0 + 14.0 * i
 		var site := V1Site.new()

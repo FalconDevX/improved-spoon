@@ -4,6 +4,7 @@ extends "res://scripts/soldier.gd"
 ## wstrzymanie oddechu, trzynaście broni, magazynki, tryby ognia, opatrunki, zbieranie amunicji,
 ## samoloty (wsiadanie [F], sterowanie przejmuje plane.gd).
 
+const Terrain = preload("res://scripts/terrain.gd")
 const WALK := 1.6
 const JOG := 3.6
 const SPRINT := 6.2
@@ -61,6 +62,8 @@ var _vm_low := 0.0
 var _bob_t := 0.0
 var _aim_local := Vector3.FORWARD
 var vehicle = null             # samolot, w którym siedzę (plane.gd)
+var platform = null            # samolot, po którego wnętrzu chodzę (c17.gd) — przenosi mnie ze sobą
+var _plat_xf := Transform3D()
 
 
 func _ready() -> void:
@@ -284,6 +287,7 @@ func _physics_process(dt: float) -> void:
 			damage_dirs.remove_at(i)
 	if vehicle:
 		return   # w kabinie: ruch i strzelanie prowadzi samolot
+	_tick_platform()
 	if para > 0:
 		_tick_para(dt)
 		return
@@ -864,6 +868,37 @@ func _board_plane() -> bool:
 			pl.board(self)
 			return true
 	return false
+
+
+## Wnętrze samolotu (C-17): przesunięcie i obrót, które samolot wykonał w tym kroku, dostaję też ja
+## (samolot liczy się wcześniej — process_physics_priority), więc chodzę po ładowni jak po ziemi.
+## Wyjście z wnętrza w locie (otwarta rampa) — swobodny spadek, Spacja otwiera spadochron.
+func _tick_platform() -> void:
+	if platform == null:
+		for w in get_tree().get_nodes_in_group("walkable"):
+			if w.inside(global_position):
+				set_platform(w)
+				return
+		return
+	if not is_instance_valid(platform) or platform.destroyed:
+		platform = null
+		return
+	var xf: Transform3D = platform.global_transform
+	global_position = (xf * _plat_xf.affine_inverse()) * global_position
+	var f0 := -_plat_xf.basis.z
+	var f1 := -xf.basis.z
+	_yaw += wrapf(atan2(-f1.x, -f1.z) - atan2(-f0.x, -f0.z), -PI, PI)
+	_plat_xf = xf
+	if not platform.inside(global_position):
+		var w = platform
+		platform = null
+		if not w.on_ground and para == 0 and global_position.y - Terrain.height(global_position.x, global_position.z) > 20.0:
+			start_freefall(global_position, w.velocity * 0.25)
+
+
+func set_platform(w) -> void:
+	platform = w
+	_plat_xf = w.global_transform
 
 
 ## Siadam w kabinie: ciało przestaje kolidować, broń chowam, obraz daje kamera samolotu.

@@ -49,6 +49,8 @@ const CONVERGE := 280.0
 var V_MIN := 40.0                          # poniżej nos opada (zamiast przeciągnięcia)
 var V_MAX := 150.0                         # przy pełnym gazie w locie poziomym
 var TURN_RATE := 1.3                       # maks. obrót nosa za celownikiem [rad/s]
+var MAX_BANK := 1.3                        # największe przechylenie w zakręcie [rad]
+var autopilot := false                     # bez pilota w powietrzu trzyma wysokość (c17.gd)
 var BOARD := Vector3.ZERO                  # punkt wsiadania (układ samolotu) i jego zasięg
 var BOARD_R := 5.0
 var EXIT := Vector3(-2.0, 0, 0.9)          # gdzie staje wysiadający
@@ -611,9 +613,11 @@ func _simulate(dt: float) -> void:
 		throttle = clampf(throttle + Input.get_axis("move_back", "move_forward") * 0.6 * dt, 0.0, 1.0)
 	elif _ai_on():
 		throttle = move_toward(throttle, ai.throttle, 0.6 * dt)
+	elif autopilot:
+		pass                                          # autopilot trzyma ustawiony gaz
 	elif pilot == null and not on_ground:
 		throttle = maxf(throttle - 0.15 * dt, 0.0)   # bez pilota: silnik dławi się, samolot szybuje w dół
-	if not on_ground and hp > 0.0 and (_local_pilot() or _ai_on()):
+	if not on_ground and hp > 0.0 and (_local_pilot() or _ai_on() or autopilot):
 		_arcade(dt)
 	else:
 		# siły (przyspieszenia)
@@ -683,7 +687,7 @@ func _arcade(dt: float) -> void:
 	var nf := Basis.from_euler(Vector3(np, cy + dyaw, 0.0)) * Vector3.FORWARD
 	# przechylenie jak w zakręcie skoordynowanym: tg(φ) = v·ω / g (w prawo +)
 	var turn := -dyaw / maxf(dt, 0.0001)
-	var bank_t := clampf(atan(spd * turn / GRAVITY), -1.3, 1.3)
+	var bank_t := clampf(atan(spd * turn / GRAVITY), -MAX_BANK, MAX_BANK)
 	_bank_cmd = lerpf(_bank_cmd, bank_t, 1.0 - exp(-3.5 * dt))
 	var ref := Basis.looking_at(nf, Vector3.UP if absf(nf.y) < 0.98 else -fwd)
 	var up := ref.y * cos(_bank_cmd) + ref.x * sin(_bank_cmd)
