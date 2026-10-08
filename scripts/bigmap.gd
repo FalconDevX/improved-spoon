@@ -24,7 +24,10 @@ func pick_target(title: String, cb: Callable) -> void:
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# rodzicem jest CanvasLayer (nie Control), więc kotwice nie dają rozmiaru — bez tego mapa
+	# miała 0 × 0 px i kliknięcia / kółko trafiały do gry zamiast do mapy
+	_fit()
+	get_viewport().size_changed.connect(_fit)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
 	_tex = ImageTexture.create_from_image(level.terrain.map_img)
@@ -37,7 +40,22 @@ func _ready() -> void:
 	_roads = ImageTexture.create_from_image(img)
 
 
+func _fit() -> void:
+	position = Vector2.ZERO
+	size = get_viewport_rect().size
+
+
 func _unhandled_input(e: InputEvent) -> void:
+	if visible and e is InputEventKey and e.pressed and not e.echo:
+		var k := (e as InputEventKey).keycode
+		if k == KEY_EQUAL or k == KEY_PLUS or k == KEY_KP_ADD:
+			_zoom = minf(_zoom * 1.4, 8.0)
+			get_viewport().set_input_as_handled()
+			return
+		if k == KEY_MINUS or k == KEY_KP_SUBTRACT:
+			_zoom = maxf(_zoom / 1.4, 1.0)
+			get_viewport().set_input_as_handled()
+			return
 	if e.is_action_pressed("map"):
 		_toggle(not visible)
 		get_viewport().set_input_as_handled()
@@ -50,6 +68,7 @@ func _unhandled_input(e: InputEvent) -> void:
 func _toggle(on: bool) -> void:
 	visible = on
 	if on:
+		_fit()
 		var p = main._player
 		_center = Vector2(p.global_position.x, p.global_position.z) if is_instance_valid(p) else Vector2.ZERO
 		_zoom = 1.0
@@ -205,10 +224,10 @@ func _draw() -> void:
 	draw_line(bp, bp + Vector2(bar, 0), Color(1, 1, 1, 0.9), 2.0)
 	draw_string(font, bp + Vector2(0, -6), "500 m", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.9))
 	if _pick.is_valid():
-		draw_string(font, Vector2(f.position.x, f.position.y - 10), "%s — LPM wybiera cel   Esc — anuluj   kółko — przybliżenie" % _pick_title,
+		draw_string(font, Vector2(f.position.x, f.position.y - 10), "%s — LPM wybiera cel   Esc — anuluj   kółko / + − — przybliżenie" % _pick_title,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color(1, 0.4, 0.3))
 	else:
-		draw_string(font, Vector2(f.position.x, f.position.y - 10), "MAPA  [M]   LPM — punkt nawigacyjny   PPM — usuń   kółko — przybliżenie, środkowy — przesuń",
+		draw_string(font, Vector2(f.position.x, f.position.y - 10), "MAPA  [M]   LPM — punkt nawigacyjny   PPM — usuń   kółko / + − — przybliżenie, środkowy — przesuń",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.92, 0.7))
 	draw_string(font, to_screen(Vector2(0, -Terrain.WORLD)) + Vector2(-5, 16), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 0.85, 0.4))
 
