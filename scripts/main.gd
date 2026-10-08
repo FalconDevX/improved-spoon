@@ -614,7 +614,7 @@ func _spawn_planes() -> void:
 	# C-17 Globemaster na wschodnim końcu pasa, nosem na zachód (gotowy do startu)
 	var g := C17.new()
 	g.name = "Globemaster1"
-	g.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(760.0, Terrain.height(760.0, 11.0) + 4.1, 11.0))
+	g.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(740.0, Terrain.height(740.0, 11.0) + g.GEAR_H, 11.0))
 	add_child(g)
 	for i in _level.heli_spots.size():
 		var h := Heli.new()
