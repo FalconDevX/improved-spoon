@@ -494,6 +494,9 @@ func _reset_world() -> void:
 	_corpses.clear()
 	for g in get_tree().get_nodes_in_group("dropped_gun"):
 		g.queue_free()
+	# bomby w locie, wybuch atomowy (grzyb, fala), syreny alarmu, płonący napalm
+	for o in get_tree().get_nodes_in_group("ordnance"):
+		o.queue_free()
 	for c in get_tree().get_nodes_in_group("ammo_crate"):
 		c.cooldown = 0.01
 	var others: Array = []

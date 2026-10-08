@@ -532,10 +532,11 @@ func _draw_heli(font: Font, vs: Vector2, pl) -> void:
 	draw_string(font, Vector2(x, y + 124), "%d" % am, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color(1, 1, 1) if am > 0 else Color(1, 0.35, 0.3))
 	draw_string(font, Vector2(x + 90, y + 124), str(pl.get("gun_label")) if pl.get("gun_label") != null else "2 × KM 12,7 mm", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1, 0.8))
 	var nr: int = pl.rockets
+	var rl: String = pl.get("rocket_label") if pl.get("rocket_label") != null else "RAKIETY"
 	if nr <= 0 or (nr < pl.ROCKETS and pl.rocket_reload > 0.0):
-		_bar(Vector2(x, y + 138), 160, pl.rocket_reload / pl.ROCKET_RELOAD, Color(1, 0.75, 0.3), "rakiety: przeładowanie %d s" % ceili(pl.ROCKET_RELOAD - pl.rocket_reload), font)
+		_bar(Vector2(x, y + 138), 160, pl.rocket_reload / pl.ROCKET_RELOAD, Color(1, 0.75, 0.3), "%s: przeładowanie %d s" % [rl.to_lower(), ceili(pl.ROCKET_RELOAD - pl.rocket_reload)], font)
 	else:
-		draw_string(font, Vector2(x, y + 146), "RAKIETY  %d / %d  [PPM]" % [nr, pl.ROCKETS], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.85, 0.5))
+		draw_string(font, Vector2(x, y + 146), "%s  %d / %d  [PPM]" % [rl, nr, pl.ROCKETS], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 0.85, 0.5))
 	if not show_help:
 		draw_string(font, Vector2(x, y + 168), "F1 — sterowanie śmigłowcem", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
 	if cam:

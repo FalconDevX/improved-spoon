@@ -21,6 +21,7 @@ var _fires: Array = []
 
 
 func _ready() -> void:
+	add_to_group("ordnance")
 	global_basis = Basis.looking_at(dir, Vector3.UP)
 	# płomienie: kilka emiterów wzdłuż pasa, każdy dopasowany do terenu (promień w dół)
 	var space := get_world_3d().direct_space_state

@@ -26,7 +26,6 @@ const KINDS := {
 	"bomblet": {"name": "podpocisk", "kill": 3.2, "stun": 9.0, "plane": 5.0, "frags": 10, "blast": 0.55, "scale": 0.35, "share": 0.0, "reload": 0.0},
 	"nuke": {"name": "ATOMOWA", "kill": 0.0, "stun": 0.0, "plane": 0.0, "frags": 0, "blast": 0.0, "scale": 4.2, "share": 0.0, "reload": 60.0},
 }
-const NUKE_BURST := 200.0      # wysokość wybuchu atomowego nad ziemią [m] (zapalnik zbliżeniowy)
 const CLUSTER_OPEN := 160.0    # kaseta otwiera się na tej wysokości nad ziemią
 
 
@@ -111,6 +110,7 @@ static func salvo_size(k: String, racks: int) -> int:
 
 
 func _ready() -> void:
+	add_to_group("ordnance")     # restart mapy usuwa spadające bomby
 	var c: Dictionary = KINDS[kind]
 	kill_r = c["kill"]
 	stun_r = c["stun"]
@@ -149,14 +149,11 @@ func _physics_process(dt: float) -> void:
 	if not r.is_empty():
 		_explode(r["position"] + (r["normal"] as Vector3) * 0.3)
 		return
-	if (kind == "nuke" or kind == "cluster") and _t > 1.0 and vel.y < 0.0:
-		var fuse := NUKE_BURST if kind == "nuke" else CLUSTER_OPEN
-		var g := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(p1, p1 + Vector3.DOWN * fuse, 1))
+	# kaseta otwiera się nad ziemią; atomowa wybucha dopiero przy uderzeniu, tam gdzie spadła
+	if kind == "cluster" and _t > 1.0 and vel.y < 0.0:
+		var g := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(p1, p1 + Vector3.DOWN * CLUSTER_OPEN, 1))
 		if not g.is_empty():
-			if kind == "nuke":
-				_nuke(p1)
-			else:
-				_open_cluster(p1)
+			_open_cluster(p1)
 			return
 	if p1.y < -30.0 or _t > 40.0:
 		queue_free()

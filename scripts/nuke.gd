@@ -44,6 +44,7 @@ var _sounds := 0
 
 
 func _ready() -> void:
+	add_to_group("ordnance")
 	var r := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3.DOWN * 2000.0, 1))
 	_gz = r["position"] if not r.is_empty() else Vector3(global_position.x, 0.0, global_position.z)
 	_burst_h = global_position.y - _gz.y
@@ -84,6 +85,7 @@ static func alarm(parent: Node, dur: float) -> void:
 		a.volume_db = 8.0
 		a.attenuation_filter_cutoff_hz = 9000.0
 		a.pitch_scale = 1.0 + 0.03 * i
+		a.add_to_group("ordnance")
 		parent.add_child(a)
 		a.global_position = SIRENS[i]
 		a.play(0.7 * i)

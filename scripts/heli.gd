@@ -37,6 +37,7 @@ const FLARE_CD := 0.8
 var MAX_TILT := 0.38
 var CLIMB := 10.0
 var TURN := 1.8                          # obrót za wzrokiem [rad/s]
+var THRUST := 1.5                        # ciąg poziomy (× g przy pełnym wychyleniu, przez tg kąta)
 const DRAG := 0.12
 const SPOOL := 4.0                         # rozkręcanie wirnika [s]
 var CRASH_VY := 8.0
@@ -574,7 +575,7 @@ func _simulate(dt: float) -> void:
 	# poziomo: ciąg wirnika pochylonego o kąt (g·tg), w układzie kursu śmigłowca
 	var head := Basis(Vector3.UP, _yaw)
 	var lv := head.inverse() * hv                         # x — w bok, z — do tyłu (+) / przodu (−)
-	var thrust := GRAVITY * lift * 1.5
+	var thrust := GRAVITY * lift * THRUST
 	lv.z += -tan(_tilt.x) * thrust * dt
 	lv.x += tan(_tilt.y - bank) * thrust * dt + bank * GRAVITY * 0.3 * dt
 	# opór: do przodu mały (opływowy kadłub), w bok duży i rosnący z prędkością — kadłub i belka
