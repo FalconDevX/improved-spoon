@@ -34,50 +34,40 @@ var _snd: AudioStreamPlayer3D
 var _trail: GPUParticles3D
 var _body: Node3D
 
-const PAINT := """
-shader_type spatial;
-render_mode cull_disabled;   // część ścian kadłuba w siatce ma odwrotny obieg
-// Malowanie V-2 z prób: kadłub w ćwiartkach na przemian czarne i białe, przy głowicy i ogonie
-// pas w odwróconym układzie (siatka bez UV — wzór z położenia w układzie modelu).
-varying vec3 lp;
-void vertex() { lp = VERTEX; }
-void fragment() {
-	float a = atan(lp.x, lp.z);
-	float q = mod(floor((a + 3.14159265) / 1.5707963), 2.0);
-	float band = (lp.y > 7.0 || lp.y < -6.0) ? 1.0 : 0.0;
-	float k = abs(q - band);
-	vec3 c = mix(vec3(0.92, 0.91, 0.86), vec3(0.06, 0.06, 0.06), k);
-	if (lp.y < -8.5) c = mix(c, vec3(0.2, 0.22, 0.18), 0.6);     // stateczniki ciemniejsze
-	ALBEDO = c;
-	ROUGHNESS = 0.6;
-	METALLIC = 0.15;
-}
-"""
-static var _paint: ShaderMaterial
+const MODEL_DARK := "res://assets/vehicles/v2/v2_dark.obj"   # druga połowa malowania (czarne pola)
+static var _white: StandardMaterial3D
+static var _black: StandardMaterial3D
 
 
 func _ready() -> void:
 	_body = Node3D.new()
 	add_child(_body)
-	if _paint == null:
-		var sh := Shader.new()
-		sh.code = PAINT
-		_paint = ShaderMaterial.new()
-		_paint.shader = sh
-	var mi := MeshInstance3D.new()
+	if _white == null:
+		# siatka jest podzielona na pola malowania z prób (czarno-białe); część ścian ma odwrotny
+		# obieg, więc bez odrzucania tylnych ścian
+		_white = StandardMaterial3D.new()
+		_white.albedo_color = Color(0.9, 0.89, 0.84)
+		_white.roughness = 0.6
+		_white.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_black = _white.duplicate()
+		_black.albedo_color = Color(0.07, 0.07, 0.07)
 	if ResourceLoader.exists(MODEL):
-		mi.mesh = load(MODEL)
-		mi.material_override = _paint
-		mi.scale = Vector3.ONE * SCALE
-		mi.position = Vector3.UP * BASE_Y * SCALE        # początek węzła = spód stateczników
+		for part: Array in [[MODEL, _white], [MODEL_DARK, _black]]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = load(part[0])
+			mi.material_override = part[1]
+			mi.scale = Vector3.ONE * SCALE
+			mi.position = Vector3.UP * BASE_Y * SCALE        # początek węzła = spód stateczników
+			_body.add_child(mi)
 	else:
+		var mi := MeshInstance3D.new()
 		var c := CylinderMesh.new()
 		c.top_radius = 0.3
 		c.bottom_radius = 0.85
 		c.height = 14.0
 		mi.mesh = c
 		mi.position = Vector3.UP * 7.0
-	_body.add_child(mi)
+		_body.add_child(mi)
 	# płomień z dyszy (w dół, czyli w −Y rakiety)
 	_flame = MeshInstance3D.new()
 	var fm := CylinderMesh.new()
