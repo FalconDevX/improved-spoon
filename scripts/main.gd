@@ -18,6 +18,7 @@ const Sam = preload("res://scripts/sam.gd")
 const Village = preload("res://scripts/village.gd")
 const Bunker = preload("res://scripts/bunker.gd")
 const Ufo = preload("res://scripts/ufo.gd")
+const Civilian = preload("res://scripts/civilian.gd")
 const V1Site = preload("res://scripts/v1_site.gd")
 const V2Site = preload("res://scripts/v2_site.gd")
 const Terrain = preload("res://scripts/terrain.gd")
@@ -84,6 +85,8 @@ func _ready() -> void:
 	_plant_grass.call_deferred()
 	Npc.level = _level
 	Npc.deaths = 0
+	Civilian.deaths = 0
+	Civilian.feed.clear()
 	Player.net_on = false
 	_rng.randomize()
 	RenderingServer.global_shader_parameter_set("xray", 0.0)
@@ -491,6 +494,8 @@ func _reset_world() -> void:
 	_bot_corpses.clear()
 	Npc._covers_taken.clear()
 	Npc.deaths = 0
+	Civilian.deaths = 0
+	Civilian.feed.clear()
 	Npc.skill = Settings.difficulty
 	for c in _corpses:
 		if is_instance_valid(c):

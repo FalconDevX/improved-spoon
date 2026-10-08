@@ -626,6 +626,8 @@ func confirm_hit(target, newly_down: bool) -> void:
 func on_kill(target) -> void:
 	if is_remote or not is_instance_valid(target):
 		return
+	if target.is_in_group("civilian"):
+		return   # cywile: bez punktów, liczy je statystyka cywilów (civilian.gd, HUD)
 	kills += 1
 	hit_marker = 1.0
 	hit_kind = 2

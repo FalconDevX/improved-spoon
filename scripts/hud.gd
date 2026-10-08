@@ -6,6 +6,7 @@ const Npc = preload("res://scripts/npc.gd")
 const Vitals = preload("res://scripts/vitals.gd")
 const Aircraft = preload("res://scripts/plane.gd")
 const Terrain = preload("res://scripts/terrain.gd")
+const Civilian = preload("res://scripts/civilian.gd")
 
 var player = null
 var xray := false
@@ -79,6 +80,7 @@ func _draw() -> void:
 		_panel(Rect2(vs.x - 250, 12, 234, 58))
 		draw_string(font, Vector2(vs.x - 232, 36), "WYELIMINOWANI", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.8, 0.82, 0.8, 0.8))
 		draw_string(font, Vector2(vs.x - 120, 38), "%d" % Npc.deaths, HORIZONTAL_ALIGNMENT_RIGHT, 90, 24, Color(1, 1, 1, 0.95))
+		_draw_civilians(font, vs)
 		if player.down:
 			_center_text(font, "WYELIMINOWANY (%s) — SPACJA: odrodzenie, F5: od nowa" % ("nie żyjesz" if player.vitals.dead else "nieprzytomny"),
 				Vector2(vs.x * 0.5, vs.y * 0.5 - 40), 26, Color(1, 0.4, 0.3))
@@ -896,6 +898,48 @@ func _draw_hit_popups(font: Font, cam: Camera3D) -> void:
 		size = int(size * pop)
 		draw_string(font, sp + Vector2(1.5, 1.5), pp["text"], HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(0, 0, 0, a * 0.7))
 		draw_string(font, sp, pp["text"], HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+
+
+## Zabici cywile: licznik od startu mapy i lista ostatnich zgonów pod listą zabójstw; gdy naraz
+## jest ich więcej niż 20, lista zwija się w jedną zsumowaną linię.
+func _draw_civilians(font: Font, vs: Vector2) -> void:
+	var grey := Color(0.85, 0.85, 0.8)
+	_panel(Rect2(vs.x - 250, 74, 234, 30))
+	draw_string(font, Vector2(vs.x - 232, 95), "CYWILE ZABICI", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(grey, 0.8))
+	draw_string(font, Vector2(vs.x - 120, 96), "%d" % Civilian.deaths, HORIZONTAL_ALIGNMENT_RIGHT, 90, 18, Color(1, 0.75, 0.6, 0.95))
+	var now := Time.get_ticks_msec() / 1000.0
+	var live: Array = []
+	var mine := 0
+	for e: Dictionary in Civilian.feed:
+		if now - float(e["at"]) < Civilian.FEED_TIME:
+			live.append(e)
+			if String(e["text"]).ends_with("(ty)"):
+				mine += 1
+		else:
+			break
+	if live.is_empty():
+		return
+	var fy: float = 90.0 + 28.0 * player.kill_feed.size() + 34.0
+	var lines: Array = []
+	if live.size() > 20:
+		var t := "Zginęło %d cywilów" % live.size()
+		if mine > 0:
+			t += "  (ty: %d)" % mine
+		lines.append([t, now - float(live[0]["at"])])
+	else:
+		for e: Dictionary in live:
+			lines.append([e["text"], now - float(e["at"])])
+	for ln: Array in lines:
+		var age: float = ln[1]
+		var a := clampf((Civilian.FEED_TIME - age) / 1.0, 0.0, 1.0)
+		var t: String = ln[0]
+		var w := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+		var x := vs.x - 24.0 - w - 30.0
+		draw_rect(Rect2(x - 8, fy - 15, w + 46, 20), Color(0, 0, 0, 0.4 * a))
+		draw_rect(Rect2(x - 8, fy - 15, 3, 20), Color(grey, a))
+		draw_string(font, Vector2(x, fy), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, a * 0.9))
+		_skull(Vector2(x + w + 18, fy - 5), 12.0, Color(grey, a))
+		fy += 22.0
 
 
 func _draw_kills(font: Font, vs: Vector2) -> void:

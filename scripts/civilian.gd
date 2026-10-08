@@ -9,6 +9,11 @@ const RUN := 4.8
 const SHIRTS := [Color(0.85, 0.2, 0.15), Color(0.95, 0.85, 0.3), Color(0.2, 0.45, 0.8), Color(0.95, 0.95, 0.92),
 	Color(0.3, 0.65, 0.35), Color(0.75, 0.45, 0.75), Color(0.95, 0.55, 0.2), Color(0.55, 0.75, 0.9)]
 
+## Statystyka (HUD): ilu cywilów zginęło od startu mapy i ostatnie zgony {text, at}.
+static var deaths := 0
+static var feed: Array = []
+const FEED_TIME := 8.0
+
 var village
 var from := 0
 var to := 0
@@ -183,3 +188,15 @@ func near_miss(pos: Vector3, _dist: float, _speed: float, _shooter) -> void:
 func _on_hit(h: Dictionary, _res: Dictionary) -> void:
 	var sh = h.get("shooter")
 	_scare(sh.global_position if sh != null and is_instance_valid(sh) else global_position, 20.0)
+
+
+func _collapse(dir: Vector3, at: Vector3, seg: String, energy: float, instant: bool) -> void:
+	if down:
+		return
+	var sh = last_shooter
+	var mine: bool = sh != null and is_instance_valid(sh) and sh.is_in_group("player") and sh.get("is_remote") != true
+	super._collapse(dir, at, seg, energy, instant)
+	deaths += 1
+	feed.push_front({"text": "Cywil zginął" + ("  (ty)" if mine else ""), "at": Time.get_ticks_msec() / 1000.0})
+	if feed.size() > 400:
+		feed.resize(400)
