@@ -684,6 +684,13 @@ func muzzle_smoke(pos: Vector3, dir: Vector3, amount := 1.0) -> void:
 ## Wybuch (rozbity samolot): kula ognia, błysk, kłęby czarnego dymu, odłamki iskier, huk.
 func explosion(pos: Vector3, size := 1.0) -> void:
 	play("boom", pos, 10.0, 0.08, 1.0, 60.0)
+	# światło błysku: najwyżej kilka naraz (seria bomb = kilkanaście świateł i spadek klatek)
+	var now := Time.get_ticks_msec()
+	_flash_t = _flash_t.filter(func(t: int) -> bool: return now - t < 900)
+	if _flash_t.size() >= 3:
+		_explosion_parts(pos, size)
+		return
+	_flash_t.append(now)
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.6, 0.25)
 	light.light_energy = 12.0 * size
@@ -693,6 +700,13 @@ func explosion(pos: Vector3, size := 1.0) -> void:
 	var tw := create_tween()
 	tw.tween_property(light, "light_energy", 0.0, 0.9)
 	tw.tween_callback(light.queue_free)
+	_explosion_parts(pos, size)
+
+
+var _flash_t: Array[int] = []
+
+
+func _explosion_parts(pos: Vector3, size: float) -> void:
 	_burst(pos, 60, 0.9, 4.0 * size, 14.0 * size, Vector3(0, 2.0, 0), [Color(1.0, 0.85, 0.45, 1.0), Color(1.0, 0.35, 0.05, 0.9), Color(0.15, 0.1, 0.08, 0.0)], 1.2 * size, true)
 	_burst(pos, 40, 4.5, 1.0 * size, 6.0 * size, Vector3(0, 1.8, 0), [Color(0.12, 0.11, 0.1, 0.85), Color(0.25, 0.24, 0.23, 0.5), Color(0.3, 0.3, 0.3, 0.0)], 2.6 * size, false)
 	_burst(pos, 50, 1.6, 8.0 * size, 26.0 * size, Vector3(0, -9.8, 0), [Color(1.0, 0.8, 0.4, 1.0), Color(1.0, 0.4, 0.1, 1.0), Color(0.5, 0.1, 0.0, 0.0)], 0.08, true)

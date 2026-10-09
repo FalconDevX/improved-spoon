@@ -181,7 +181,7 @@ var _clock := 0.0
 ## Miejsca startu graczy (boty nie startują obok nich).
 func _player_spawns() -> Array:
 	if Player.net_on:
-		return [_level.posts[9], _level.posts[11]]
+		return _level.c17_spawns
 	return [_level.spawn_player]
 
 
@@ -524,9 +524,9 @@ func _reset_world() -> void:
 	var p: Node
 	if Player.net_on:
 		var me: int = get_node("/root/GDSync").get_client_id()
-		p = _make_net_player(me, false, _level.posts[11] if _pvp_host else _level.posts[9])
+		p = _make_net_player(me, false, _level.c17_spawns[1] if _pvp_host else _level.c17_spawns[0])
 		for id: int in others:
-			_make_net_player(id, true, _level.posts[9] if _pvp_host else _level.posts[11])
+			_make_net_player(id, true, _level.c17_spawns[0] if _pvp_host else _level.c17_spawns[1])
 	else:
 		p = Player.new()
 		p.name = "Player"
@@ -725,6 +725,7 @@ func _setup_input() -> void:
 	_key("weapon_10", KEY_0)
 	_key("view_toggle", KEY_V)
 	_key("laser", KEY_L)
+	_key("bomb_cam", KEY_Z)
 	_key("help", KEY_F1)
 	_key("grade", KEY_F2)
 	_key("stick_up", KEY_UP)
@@ -1042,7 +1043,7 @@ func _on_lobby_joined(_n: String) -> void:
 	var me: int = gd.get_client_id()
 	# kto założył grę (nie gd.is_host(): online host jest wyznaczany dopiero po wejściu do lobby,
 	# więc obaj dostawali to samo miejsce i stali w sobie)
-	var p := _make_net_player(me, false, _pvp_spawn(_level.posts[11] if _pvp_host else _level.posts[9]))
+	var p := _make_net_player(me, false, _pvp_spawn(_level.c17_spawns[1] if _pvp_host else _level.c17_spawns[0]))
 	_player = p
 	_make_hud(p)
 	_hud.pvp = true
@@ -1165,7 +1166,7 @@ func _on_client_joined(id: int) -> void:
 	if not _match_started or has_node("P%d" % id) or id == get_node("/root/GDSync").get_client_id():
 		return
 	# pozycję poprawi pierwszy pakiet stanu
-	_make_net_player(id, true, _level.posts[9] if _pvp_host else _level.posts[11])
+	_make_net_player(id, true, _level.c17_spawns[0] if _pvp_host else _level.c17_spawns[1])
 	_set_status("Przeciwnik dołączył")
 	if chat:
 		chat.add("Drugi gracz dołączył do gry", Color(1, 0.85, 0.4))

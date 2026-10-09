@@ -50,6 +50,9 @@ var V_MIN := 40.0                          # poniżej nos opada (zamiast przeci�
 var V_MAX := 150.0                         # przy pełnym gazie w locie poziomym
 var TURN_RATE := 1.3                       # maks. obrót nosa za celownikiem [rad/s]
 var MAX_BANK := 1.3                        # największe przechylenie w zakręcie [rad]
+var AIM_LAG := 1.0                         # mnożnik wygładzenia celownika w locie (mniej = ociężały samolot)
+var BANK_RATE := 3.5                       # jak szybko zmienia się przechylenie w zakręcie [1/s]
+var SPD_RATE := 0.45                       # jak szybko prędkość dochodzi do gazu (× THRUST)
 var autopilot := false                     # bez pilota w powietrzu trzyma wysokość (c17.gd)
 var BOARD := Vector3.ZERO                  # punkt wsiadania (układ samolotu) i jego zasięg
 var BOARD_R := 5.0
@@ -108,6 +111,10 @@ var _aim_yaw := 0.0
 var _aim_pitch := 0.0
 var _look := false                         # PPM wciśnięty: mysz obraca tylko kamerę (rozglądanie)
 var _look_yaw := 0.0
+var bomb_cam := false                      # [Z] kamera leci za ostatnią zrzuconą bombą
+var _last_bomb: Node3D = null
+var _bomb_at := Vector3.ZERO               # gdzie bomba była ostatnio (wybuch)
+var _bomb_hold := 0.0                      # po wybuchu kamera chwilę patrzy na miejsce trafienia
 var _look_pitch := 0.0
 var _aim_s := Vector3.FORWARD   # wygładzony kierunek celowania (instruktor)
 var _ctrl := Vector3.ZERO       # aktualne wychylenia sterów
@@ -470,6 +477,7 @@ func _seat_pilot() -> void:
 
 func pilot_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		_look = Input.is_action_pressed("aim")      # stan przycisku, nie zdarzenia (puszczenie mogło nie dotrzeć)
 		if _look:
 			_look_yaw = clampf(_look_yaw - e.relative.x * MOUSE_SENS * Settings.sens, -PI, PI)
 			_look_pitch = clampf(_look_pitch - e.relative.y * MOUSE_SENS * Settings.sens, -1.3, 1.3)
@@ -501,6 +509,10 @@ func pilot_input(e: InputEvent) -> void:
 		cycle_bomb()
 	elif e.is_action_pressed("view_toggle"):
 		cockpit_view = not cockpit_view
+	elif e.is_action_pressed("bomb_cam"):
+		bomb_cam = not bomb_cam
+		if _local_pilot():
+			pilot._msg("Widok bomby: " + ("WŁ." if bomb_cam else "WYŁ."))
 	elif e.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
@@ -668,11 +680,11 @@ func _arcade(dt: float) -> void:
 	var spd := velocity.length()
 	var eng := 0.6 if hp < MAX_HP * 0.25 else 1.0
 	var target := V_MIN + (V_MAX - V_MIN) * throttle * eng
-	spd = move_toward(spd, target, THRUST * 0.45 * dt)
+	spd = move_toward(spd, target, THRUST * SPD_RATE * dt)
 	spd = maxf(spd - fwd.y * GRAVITY * 0.55 * dt, 18.0)
 	if _local_pilot() and not Player.chat_open:
 		_aim_yaw -= Input.get_axis("move_left", "move_right") * 0.7 * dt   # A/D — lekki skręt
-	_aim_s = _aim_s.slerp(aim_dir(), 1.0 - exp(-AIM_SMOOTH * 1.5 * dt)).normalized()
+	_aim_s = _aim_s.slerp(aim_dir(), 1.0 - exp(-AIM_SMOOTH * 1.5 * AIM_LAG * dt)).normalized()
 	var want := _aim_s
 	if spd < V_MIN * 0.85:
 		want = (want + Vector3.DOWN * clampf((V_MIN * 0.85 - spd) / 10.0, 0.0, 1.0)).normalized()
@@ -688,7 +700,7 @@ func _arcade(dt: float) -> void:
 	# przechylenie jak w zakręcie skoordynowanym: tg(φ) = v·ω / g (w prawo +)
 	var turn := -dyaw / maxf(dt, 0.0001)
 	var bank_t := clampf(atan(spd * turn / GRAVITY), -MAX_BANK, MAX_BANK)
-	_bank_cmd = lerpf(_bank_cmd, bank_t, 1.0 - exp(-3.5 * dt))
+	_bank_cmd = lerpf(_bank_cmd, bank_t, 1.0 - exp(-BANK_RATE * dt))
 	var ref := Basis.looking_at(nf, Vector3.UP if absf(nf.y) < 0.98 else -fwd)
 	var up := ref.y * cos(_bank_cmd) + ref.x * sin(_bank_cmd)
 	var z := -nf
@@ -901,7 +913,38 @@ func _drop(pos: Vector3, v: Vector3, kind := "frag") -> void:
 	get_parent().add_child(b)
 	b.global_position = pos
 	b.global_basis = global_basis
+	_last_bomb = b
+	_bomb_hold = 0.0
 	FX.I.play("click", pos, -2.0, 0.1, 0.5, 10.0)
+
+
+## Widok bomby [Z]: kamera za ostatnią zrzuconą bombą, po wybuchu jeszcze 2,5 s nad miejscem trafienia.
+## Zwraca false, gdy nie ma czego pokazać (wtedy zwykła kamera).
+func _bomb_camera(rd: float) -> bool:
+	if not bomb_cam:
+		return false
+	if _last_bomb != null and is_instance_valid(_last_bomb) and _last_bomb.is_inside_tree():
+		var bp := _last_bomb.global_position
+		var v: Vector3 = _last_bomb.vel if _last_bomb.get("vel") != null else Vector3.DOWN
+		var back := Vector3(v.x, 0.0, v.z).normalized() if Vector2(v.x, v.z).length() > 1.0 else -global_basis.z
+		var tgt := bp - back * 14.0 + Vector3.UP * 7.0
+		_cam.global_position = tgt if _cam.global_position.distance_to(tgt) > 60.0 else _cam.global_position.lerp(tgt, 1.0 - exp(-10.0 * rd))
+		_cam.global_basis = Basis.looking_at(bp + v.normalized() * 10.0 - _cam.global_position, Vector3.UP)
+		_cam.cull_mask = 0xFFFFF
+		_bomb_at = bp
+		_bomb_hold = 2.5
+		return true
+	_last_bomb = null
+	if _bomb_hold > 0.0:
+		_bomb_hold -= rd
+		_cam.global_basis = Basis.looking_at(_bomb_at - _cam.global_position, Vector3.UP)
+		return true
+	return false
+
+
+## Ciała samolotu, których jego własne bomby nie trafiają tuż po zrzucie.
+func own_rids() -> Array[RID]:
+	return [get_rid()]
 
 
 ## Ile bomb wybranego rodzaju mieści jedna seria.
@@ -1152,12 +1195,15 @@ func _process(dt: float) -> void:
 
 func _place_camera(rd: float) -> void:
 	# rozglądanie (PPM): kamera odchylona od celownika; po puszczeniu wraca za celownik
+	_look = _look and Input.is_action_pressed("aim")
 	if not _look:
 		var back := 1.0 - exp(-6.0 * rd)
 		_look_yaw = lerpf(_look_yaw, 0.0, back)
 		_look_pitch = lerpf(_look_pitch, 0.0, back)
 	var aim := Basis.from_euler(Vector3(clampf(_aim_pitch + _look_pitch, -1.5, 1.5), _aim_yaw + _look_yaw, 0.0)) * Vector3.FORWARD
 	var spd := velocity.length()
+	if _bomb_camera(rd):
+		return
 	if cockpit_view:
 		var eye := global_transform * EYE
 		# horyzont przechyla się z samolotem, ale łagodnie (bez drgań)

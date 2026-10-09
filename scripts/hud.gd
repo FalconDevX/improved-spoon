@@ -341,7 +341,9 @@ func _draw_plane_hint(font: Font, vs: Vector2) -> void:
 	var rt = player.repair_target()
 	if rt != null:
 		var k: float = rt.hp / rt.MAX_HP
-		var what := "śmigłowiec" if rt.get("is_heli") == true else "samolot"
+		var what := "śmigłowiec" if rt.get("is_heli") == true else ("pojazd" if rt.is_in_group("car") else "samolot")
+		if rt.get("board_name") in ["czołgu", "C-17"]:
+			what = "czołg" if rt.board_name == "czołgu" else "C-17"
 		var at := Vector2(vs.x * 0.5, vs.y * 0.5 + 180)
 		_center_text(font, "[R] przytrzymaj — napraw %s (%d%%)" % [what, int(k * 100.0)], at, 17, Color(0.8, 0.95, 1.0))
 		draw_rect(Rect2(at.x - 80, at.y + 8, 160, 5), Color(1, 1, 1, 0.2))

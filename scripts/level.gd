@@ -11,7 +11,8 @@ const WALL_T := 0.25
 
 var covers: Array = []            # {pos, normal, h}
 var roofs: Array = []             # {mesh, aabb}
-var spawn_player := Vector3(25, 0, 4.5)   # lotnisko, między myśliwcami
+var spawn_player := Vector3(722, 0.5, 46)   # obok C-17 na wschodnim końcu pasa (lewa burta)
+var c17_spawns := [Vector3(722, 0.5, 46), Vector3(758, 0.5, 46)]   # multiplayer: gracze przy C-17
 # skrzynki z amunicją: lotnisko, wieś, kompleks, farma, sad, pola i drogi na północy i południu
 var ammo_spots := [Vector3(20, 0, 10), Vector3(-10, 0, -2), Vector3(-30, 0, -40), Vector3(60, 0, -30),
 	Vector3(-62, 0, 34), Vector3(-70, 0, -52), Vector3(-6, 0, 70), Vector3(40, 0, 60), Vector3(-8, 0, -95)]

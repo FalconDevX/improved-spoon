@@ -63,6 +63,7 @@ var _bob_t := 0.0
 var _aim_local := Vector3.FORWARD
 var vehicle = null             # samolot, w którym siedzę (plane.gd)
 var platform = null            # samolot, po którego wnętrzu chodzę (c17.gd) — przenosi mnie ze sobą
+var seat = null                # fotel, na którym siedzę (c17_seat.gd)
 var _plat_xf := Transform3D()
 
 
@@ -175,7 +176,9 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e.is_action_pressed("bandage"):
 		_start_bandage()
 	elif e.is_action_pressed("use"):
-		if not _board_plane():
+		if seat != null:
+			stand_up()
+		elif not _board_plane():
 			_loot()
 	elif e.is_action_pressed("grenade"):
 		_throw_grenade()
@@ -288,6 +291,19 @@ func _physics_process(dt: float) -> void:
 	if vehicle:
 		return   # w kabinie: ruch i strzelanie prowadzi samolot
 	_tick_platform()
+	if seat != null:
+		if not is_instance_valid(seat):
+			seat = null
+		else:
+			# siedzi: stoi w miejscu fotela (samolot niesie go razem z platformą), rozgląda się myszą
+			global_position = seat.global_position
+			velocity = Vector3.ZERO
+			_move = Vector3.ZERO
+			rig.crouch = 1.0
+			rig.vel = Vector3.ZERO
+			rig.sprint = false
+			_tick_weapon(dt)
+			return
 	if para > 0:
 		_tick_para(dt)
 		return
@@ -338,7 +354,12 @@ func _movement(dt: float) -> void:
 	velocity.x = _move.x
 	velocity.z = _move.z
 	_jump_buf -= dt
-	if is_on_floor():
+	if _on_ladder():
+		# drabinka (C-17): W — w górę, S — w dół, bez wciśniętych — trzyma się szczebli
+		velocity.y = -input.y * 2.2
+		if input.y > 0.3 and is_on_floor():
+			velocity.y = 0.0
+	elif is_on_floor():
 		velocity.y = -0.5
 		if _jump_buf > 0.0 and not crouching and stamina > 8.0:
 			velocity.y = 3.2
@@ -874,6 +895,12 @@ func _board_plane() -> bool:
 ## Wnętrze samolotu (C-17): przesunięcie i obrót, które samolot wykonał w tym kroku, dostaję też ja
 ## (samolot liczy się wcześniej — process_physics_priority), więc chodzę po ładowni jak po ziemi.
 ## Wyjście z wnętrza w locie (otwarta rampa) — swobodny spadek, Spacja otwiera spadochron.
+func _on_ladder() -> bool:
+	if platform == null or not is_instance_valid(platform) or not platform.has_method("ladder_at"):
+		return false
+	return platform.ladder_at(platform.global_transform.affine_inverse() * global_position)
+
+
 func _tick_platform() -> void:
 	if platform == null:
 		for w in get_tree().get_nodes_in_group("walkable"):
@@ -895,6 +922,20 @@ func _tick_platform() -> void:
 		platform = null
 		if not w.on_ground and para == 0 and global_position.y - Terrain.height(global_position.x, global_position.z) > 20.0:
 			start_freefall(global_position, w.velocity * 0.25)
+
+
+func sit(s) -> void:
+	seat = s
+	if platform == null and s.plane != null:
+		set_platform(s.plane)
+	_msg("Siedzisz — [F] wstań")
+
+
+func stand_up() -> void:
+	if seat != null and is_instance_valid(seat):
+		seat.vacate(self)
+		global_position = seat.global_position + seat.global_basis * Vector3(0.9, 0.0, 0.0)
+	seat = null
 
 
 func set_platform(w) -> void:
@@ -1076,21 +1117,27 @@ func _spawn_grenade(origin: Vector3, v: Vector3) -> void:
 
 # ---------------------------------------------------------------- naprawa maszyn (przytrzymaj R)
 
-const REPAIR_TIME := 6.0       # od zera do pełna [s]
+const REPAIR_TIME := 15.0      # od zera do pełna [s] — naprawa to dłuższa chwila
 const REPAIR_STEP := 0.5
 
 var repair_t := 0.0            # jak długo trzymam R przy maszynie
 var _repair_acc := 0.0
 
 
-## Uszkodzony śmigłowiec / samolot na ziemi obok mnie, bez pilota (nie wrak).
+## Uszkodzony śmigłowiec / samolot na ziemi albo pojazd obok mnie, bez pilota (nie wrak).
 func repair_target() -> Node3D:
 	if down or vehicle:
 		return null
-	for a in get_tree().get_nodes_in_group("aircraft"):
-		if a.destroyed or a.hp <= 0.0 or a.hp >= a.MAX_HP or a.pilot != null or not a.on_ground:
+	for a in get_tree().get_nodes_in_group("aircraft") + get_tree().get_nodes_in_group("car"):
+		if a.destroyed or a.hp <= 0.0 or a.hp >= a.MAX_HP or a.pilot != null or (a.get("on_ground") == false):
 			continue
-		if global_position.distance_to(a.global_position - Vector3(0, a.GEAR_H, 0)) < 6.5:
+		# zasięg: duże maszyny (C-17) naprawia się, stojąc gdziekolwiek przy kadłubie
+		var reach := 6.5
+		if a.has_meta("size"):
+			var sz: Vector3 = a.get_meta("size")
+			reach = maxf(reach, minf(sz.x, sz.z) * 0.45)
+		var d: Vector3 = global_position - a.global_position
+		if Vector2(d.x, d.z).length() < reach and absf(d.y) < 12.0:
 			return a
 	return null
 

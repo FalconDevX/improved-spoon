@@ -2,8 +2,8 @@ extends "res://scripts/plane.gd"
 ## Boeing C-17A Globemaster III, powiększony K razy względem prawdziwego (52 m rozpiętości, 55 m długości). Model z paczki
 ## „C-17A Globemaster III” z pełną ładownią (fotele wzdłuż burt, podłoga z rolkami) i kabiną załogi.
 ## Po wnętrzu się chodzi — także w locie: ładownia przenosi stojących w niej żołnierzy razem
-## z samolotem (player.gd: platform), burty i dach ich trzymają. Do kabiny prowadzą schody z przodu
-## ładowni; [F] przy lewym fotelu — za sterami, [F] za sterami — wstajesz, samolot leci dalej
+## z samolotem (player.gd: platform), burty i dach ich trzymają. Do kabiny prowadzi drabinka z przodu
+## ładowni (drabinka z modelu: W — w górę, S — w dół); [F] przy lewym fotelu — za sterami, [F] za sterami — wstajesz, samolot leci dalej
 ## na autopilocie (wyrównuje i krąży). Rampa z tyłu [R przy rampie albo G za sterami] — otwarta
 ## na ziemi wjeżdżają po niej pojazdy (w locie są przypięte do podłogi). Z rampy zrzuca bomby
 ## [Spacja], [B] — rodzaj (w tym MOAB i atomowa).
@@ -17,9 +17,8 @@ const FLOOR_Y := -2.4 * K                      # podłoga ładowni
 const DECK_Y := 0.15 * K                       # podłoga kabiny załogi
 const HINGE := Vector3(0, -2.4, 2.0) * K       # oś rampy
 const RAMP_LEN := 9.2 * K
-const STAIR_X := 1.6 * K                       # schody do kabiny: oś, dół, długość
-const STAIR_Z := -17.4 * K
-const STAIR_RUN := 3.6 * K
+# drabinka z modelu (przednia gródź ładowni, tuż obok osi) — szyb na pokład kabiny
+const LADDER := AABB(Vector3(-0.1 * K, -2.4 * K - 0.3, -22.75 * K), Vector3(0.85 * K, 2.55 * K + 1.3, 2.15 * K))
 const RAMP_UP := -0.17                         # zamknięta: lekko w górę [rad] (tak leży w siatce modelu)
 const RAMP_DOWN := 0.2                         # otwarta: koniec na ziemi
 const AP_ALT := 650.0                          # autopilot: wysokość krążenia [m]
@@ -31,6 +30,7 @@ var _ramp: Node3D
 var _door: Node3D
 var _ramp_col: CollisionShape3D
 var _ramp_body: AnimatableBody3D               # osobne ciało: niesie pieszych i pojazdy, nie pcha samolotu o ziemię
+var _tg_warn := false
 var _carried := {}                             # pojazd -> Transform3D w układzie samolotu
 
 
@@ -42,8 +42,11 @@ func _init() -> void:
 	YAW_RATE = 0.2
 	V_MIN = 45.0
 	V_MAX = 115.0
-	TURN_RATE = 0.32
-	MAX_BANK = 0.42                            # łagodne zakręty — da się chodzić po ładowni
+	TURN_RATE = 0.13                           # ociężały: nos za celownikiem idzie powoli
+	MAX_BANK = 0.35                            # łagodne zakręty — da się chodzić po ładowni
+	AIM_LAG = 0.2
+	BANK_RATE = 0.7
+	SPD_RATE = 0.22
 	MAX_HP = 900.0
 	AMMO = 0
 	BOMBS = 12
@@ -67,6 +70,11 @@ func _ready() -> void:
 		sw.plane = self
 		sw.position = at
 		add_child(sw)
+	# prawy fotel (drugi pilot) — dla drugiego gracza
+	var cop := preload("res://scripts/c17_seat.gd").new()
+	cop.plane = self
+	cop.position = Vector3(-SEAT.x, DECK_Y, SEAT.z)
+	add_child(cop)
 	set_meta("size", Vector3(52.0, 8.0, 55.0) * K)
 	set_meta("hollow", 0.002)
 	process_physics_priority = -10            # rusza się przed żołnierzami, których przenosi
@@ -110,7 +118,8 @@ func _build_model() -> void:
 		glass.cull_mode = BaseMaterial3D.CULL_DISABLED
 		var parts := [["body", _tex_mat("body")], ["lwing", _tex_mat("lwing")], ["rwing", _tex_mat("rwing")],
 			["floor", _tex_mat("floor", Color(1, 1, 1), 0.8)], ["walls", _tex_mat("walls", Color(1, 1, 1), 0.85)],
-			["ext", grey], ["int", dark], ["glass", glass]]
+			["ext", grey], ["int", dark], ["glass", glass],
+			["plain", grey]]                     # trójkąty, których UV wskazywało tekstury wnętrza (gondole silników, ogon)
 		for p: Array in parts:
 			_part_obj(p[0], p[1], self, OFF)
 		# rampa na osi (obrót wokół X) i tylne drzwi (unoszą się do ogona)
@@ -155,13 +164,19 @@ func _collision_boxes() -> Array:
 func _boxes_raw() -> Array:
 	const FL := -2.4
 	const DK := 0.15
+	# spód kadłuba 1,1 m (×K) nad ziemią: gdy sięgał do kół, przy podrywaniu nosa tył wchodził w teren,
+	# każda klatka hamowała samolot o 15 % (_hit_obstacle) — zastygał tuż po oderwaniu i spadał
+	const BELLY := -3.0
 	var cy := (FL + 2.45) * 0.5
 	return [
-		[Vector3(5.8, 1.7, 23.2), Vector3(0, -3.25, -9.6)],                 # podłoga ładowni (do ziemi)
+		[Vector3(5.8, FL - BELLY, 23.2), Vector3(0, (FL + BELLY) * 0.5, -9.6)],   # podłoga ładowni (spód kadłuba)
 		[Vector3(0.5, 5.2, 37.0), Vector3(-3.1, cy, -7.0)],                # burty
 		[Vector3(0.5, 5.2, 37.0), Vector3(3.1, cy, -7.0)],
 		[Vector3(6.7, 0.6, 37.0), Vector3(0, 2.75, -7.0)],                 # dach
-		[Vector3(5.8, 4.25, 5.2), Vector3(0, (-4.1 + DK) * 0.5, -23.6)],   # pod kabiną
+		# pod kabiną — z szybem drabinki (x -0,1..0,75, z -22,7..-21,0)
+		[Vector3(2.8, DK - BELLY, 5.2), Vector3(-1.5, (BELLY + DK) * 0.5, -23.6)],
+		[Vector3(2.15, DK - BELLY, 5.2), Vector3(1.825, (BELLY + DK) * 0.5, -23.6)],
+		[Vector3(0.85, DK - BELLY, 3.5), Vector3(0.325, (BELLY + DK) * 0.5, -24.45)],
 		[Vector3(5.8, 0.4, 3.0), Vector3(0, 2.55, -24.5)],                 # dach kabiny
 		[Vector3(5.8, 3.0, 0.5), Vector3(0, DK + 1.5, -26.6)],             # przód kabiny
 		[Vector3(23.0, 0.9, 9.0), Vector3(-14.8, 1.0, -7.5)],              # skrzydła (poza kadłubem)
@@ -176,17 +191,7 @@ func _boxes_raw() -> Array:
 
 func _build_collision() -> void:
 	super._build_collision()
-	# schody z ładowni do kabiny (prawa strona, pochylnia ~36°)
-	var st := CollisionShape3D.new()
-	var sb := BoxShape3D.new()
-	var rise := DECK_Y - FLOOR_Y
-	var run := STAIR_RUN
-	sb.size = Vector3(1.3 * K, 0.25, sqrt(rise * rise + run * run))
-	st.shape = sb
-	st.position = Vector3(STAIR_X, (FLOOR_Y + DECK_Y) * 0.5 - 0.1, STAIR_Z - run * 0.5)
-	st.rotation.x = atan2(rise, run)      # wyżej z przodu (kabina), niżej od strony ładowni
-	add_child(st)
-	_build_stairs(rise, run)
+	_build_lights()
 	# rampa (obraca się razem z modelem)
 	_ramp_body = AnimatableBody3D.new()
 	_ramp_body.sync_to_physics = false
@@ -203,72 +208,8 @@ func _build_collision() -> void:
 	_set_ramp(_ramp_a)
 
 
-## Widoczne schody do kabiny: pełne stopnie (stopnica i podstopnica), boczne policzki, poręcze;
-## w grodzi ładowni nad schodami jest wycięty otwór drzwiowy (siatka modelu).
-func _build_stairs(rise: float, run: float) -> void:
-	var steel := StandardMaterial3D.new()
-	steel.albedo_color = Color(0.36, 0.38, 0.4)
-	steel.metallic = 0.5
-	steel.roughness = 0.55
-	var tread := StandardMaterial3D.new()
-	tread.albedo_color = Color(0.2, 0.21, 0.22)
-	tread.roughness = 0.9
-	var yellow := StandardMaterial3D.new()
-	yellow.albedo_color = Color(0.95, 0.75, 0.1)
-	yellow.roughness = 0.6
-	var n := int(round(rise / 0.2))            # ~20 cm na stopień
-	var w := 1.3 * K
-	var d := run / n
-	var h := rise / n
-	for i in n:
-		# bryła stopnia od podłogi ładowni do stopnicy
-		var top := FLOOR_Y + h * (i + 1)
-		var blk := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(w, top - FLOOR_Y, d)
-		blk.mesh = bm
-		blk.material_override = steel
-		blk.position = Vector3(STAIR_X, (top + FLOOR_Y) * 0.5, STAIR_Z - d * (i + 0.5))
-		add_child(blk)
-		var tr := MeshInstance3D.new()
-		var tm := BoxMesh.new()
-		tm.size = Vector3(w + 0.02, 0.03, d + 0.01)
-		tr.mesh = tm
-		tr.material_override = tread
-		tr.position = Vector3(STAIR_X, top + 0.015, blk.position.z)
-		add_child(tr)
-		var edge := MeshInstance3D.new()
-		var em := BoxMesh.new()
-		em.size = Vector3(w + 0.02, 0.035, 0.06)
-		edge.mesh = em
-		edge.material_override = yellow
-		edge.position = Vector3(STAIR_X, top + 0.02, blk.position.z + d * 0.5 - 0.03)
-		add_child(edge)
-	# poręcze na słupkach po obu stronach
-	var slope := atan2(rise, run)
-	var length := sqrt(rise * rise + run * run)
-	for side: float in [-w * 0.5 - 0.04, w * 0.5 + 0.04]:
-		var rail := MeshInstance3D.new()
-		var rm := CylinderMesh.new()
-		rm.top_radius = 0.025
-		rm.bottom_radius = 0.025
-		rm.height = length
-		rail.mesh = rm
-		rail.material_override = yellow
-		rail.position = Vector3(STAIR_X + side, (FLOOR_Y + DECK_Y) * 0.5 + 0.95, STAIR_Z - run * 0.5)
-		rail.rotation.x = PI * 0.5 + slope
-		add_child(rail)
-		for k in 4:
-			var t := (k + 0.5) / 4.0
-			var post := MeshInstance3D.new()
-			var pm := CylinderMesh.new()
-			pm.top_radius = 0.02
-			pm.bottom_radius = 0.02
-			pm.height = 0.95
-			post.mesh = pm
-			post.material_override = steel
-			post.position = Vector3(STAIR_X + side, FLOOR_Y + rise * t + 0.48, STAIR_Z - run * t)
-			add_child(post)
+## Światła wnętrza i napis przy drabince do kabiny.
+func _build_lights() -> void:
 	var lab := Label3D.new()
 	lab.text = "KABINA ↑"
 	lab.font_size = 48
@@ -276,7 +217,7 @@ func _build_stairs(rise: float, run: float) -> void:
 	lab.modulate = Color(1.0, 0.85, 0.3)
 	lab.outline_size = 10
 	lab.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-	lab.position = Vector3(STAIR_X, FLOOR_Y + 2.6, STAIR_Z + 0.8)
+	lab.position = Vector3(0.33 * K, FLOOR_Y + 2.3, -19.5 * K)
 	add_child(lab)
 	var lamp := OmniLight3D.new()
 	lamp.light_color = Color(1.0, 0.9, 0.75)
@@ -310,6 +251,11 @@ func _set_ramp(a: float) -> void:
 	if _door:
 		var k := inverse_lerp(RAMP_UP, RAMP_DOWN, a)
 		_door.position = Vector3(0, 3.2 * k, 1.8 * k) * K
+
+
+## Czy punkt (układ samolotu) jest przy drabince do kabiny (player.gd: wspinaczka).
+func ladder_at(local: Vector3) -> bool:
+	return LADDER.has_point(local)
 
 
 ## Czy punkt (świat) jest we wnętrzu samolotu.
@@ -391,9 +337,45 @@ func _physics_process(dt: float) -> void:
 			_aim_pitch = maxf(_aim_pitch, 0.22)
 		elif not on_ground and agl < 120.0 and throttle > 0.35:
 			_aim_pitch = maxf(_aim_pitch, lerpf(0.18, 0.0, clampf(agl / 120.0, 0.0, 1.0)))
+	_tg_warn = false
+	if autopilot or (_local_pilot() and hp > 0.0 and not on_ground):
+		_terrain_guard()
 	super._physics_process(dt)
+	if _tg_warn:
+		warn = "TEREN — W GÓRĘ"
 	_set_ramp(move_toward(_ramp_a, RAMP_DOWN if ramp_open else RAMP_UP, dt * 0.15))
 	_carry_vehicles(before)
+
+
+## Ostrzeganie przed terenem: teren na torze lotu w ciągu najbliższych 20 s — nos w górę tak, by
+## przelecieć 120 m nad najwyższym punktem (duży samolot nie wykręci przed zboczem doliny).
+func _terrain_guard() -> void:
+	var v := velocity
+	if v.length() < 20.0:
+		return
+	var need := -INF
+	for k in range(1, 21):
+		var q := global_position + Vector3(v.x, 0.0, v.z) * float(k)
+		need = maxf(need, Terrain.height(q.x, q.z) + 120.0 + GEAR_H)
+	if global_position.y < need:
+		var hd := Vector2(v.x, v.z).length() * 6.0
+		var want := clampf(atan2(need - global_position.y, hd), 0.05, 0.45)
+		_aim_pitch = maxf(_aim_pitch, want)
+		_tg_warn = true
+
+
+## Bomby zrzucane z rampy nie wybuchają na samej rampie.
+func own_rids() -> Array[RID]:
+	return [get_rid(), _ramp_body.get_rid()]
+
+
+## Otarcie spodem o ziemię przy toczeniu / podrywaniu nosa: ślizg bez hamowania (nie przeszkoda).
+func _hit_obstacle(col: KinematicCollision3D) -> bool:
+	var n := col.get_normal()
+	if on_ground and n.y > 0.7 and -velocity.dot(n) < 6.0:
+		velocity = velocity.slide(n)
+		return false
+	return super._hit_obstacle(col)
 
 
 ## Pojazdy w ładowni: w locie (albo gdy samolot się toczy) przypięte do podłogi.
@@ -423,5 +405,6 @@ func _process(dt: float) -> void:
 
 func _place_camera(rd: float) -> void:
 	super._place_camera(rd)
+
 
 

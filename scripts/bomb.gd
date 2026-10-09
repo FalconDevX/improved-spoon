@@ -43,6 +43,10 @@ class Frag:
 
 
 static var _frag: Frag = null
+static var _frag_budget := 0
+static var _frag_t0 := -100000
+const FRAG_BUDGET := 120       # odłamków na ~0,6 s (cała seria bomb)
+const FRAG_REACH := 70.0       # dalej odłamki nikogo nie trafią — nie liczymy ich
 static var _mesh_body: Mesh
 static var _mesh_fin: Mesh
 static var _mat: StandardMaterial3D
@@ -155,7 +159,7 @@ func _physics_process(dt: float) -> void:
 	var p1 := p0 + vel * dt
 	var excl: Array[RID] = []
 	if _t < 1.5 and plane != null and is_instance_valid(plane):
-		excl.append(plane.get_rid())
+		excl.append_array(plane.own_rids() if plane.has_method("own_rids") else [plane.get_rid()])
 	var q := PhysicsRayQueryParameters3D.create(p0, p1, 1 | 32, excl)
 	var r := get_world_3d().direct_space_state.intersect_ray(q)
 	if not r.is_empty():
@@ -276,9 +280,20 @@ func _explode(pos: Vector3) -> void:
 			var dpl: float = pl.global_position.distance_to(pos)
 			if dpl < plane_r and not pl.destroyed:
 				pl._damage((plane_r - dpl) * 22.0)
-	# odłamki: zwykłe pociski z balistyki (rozchodzą się głównie w bok i w górę)
+	# odłamki: zwykłe pociski z balistyki (rozchodzą się głównie w bok i w górę). Tylko gdy ktoś jest
+	# w ich zasięgu, i we wspólnym limicie na serię (setki pocisków naraz dławiły grę przy zrzucie)
 	var origin := pos + Vector3.UP * 0.4
-	for i in frags:
+	var n_frag := 0
+	var now := Time.get_ticks_msec()
+	if now - _frag_t0 > 600:
+		_frag_t0 = now
+		_frag_budget = FRAG_BUDGET
+	for s in get_tree().get_nodes_in_group("soldier"):
+		if not s.down and s.global_position.distance_to(pos) < FRAG_REACH:
+			n_frag = mini(frags, _frag_budget)
+			break
+	_frag_budget -= n_frag
+	for i in n_frag:
 		var dir := Vector3(randfn(0.0, 1.0), absf(randfn(0.0, 0.5)) + 0.05, randfn(0.0, 1.0)).normalized()
 		Ballistics.I.fire(sh, frag_gun(), origin, dir, false)
 	queue_free()
